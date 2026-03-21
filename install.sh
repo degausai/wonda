@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Wonda CLI installer — https://wondercat.ai
+# https://github.com/degausai/wonda
 set -euo pipefail
 
 APP="wonda"
