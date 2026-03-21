@@ -1,8 +1,8 @@
-# wcat
+# wonda
 
 Wondercat CLI — AI-powered content creation from your terminal.
 
-See [releases](https://github.com/degausai/wcat/releases) for downloads.
+See [releases](https://github.com/degausai/wonda/releases) for downloads.
 
 ## Install
 
