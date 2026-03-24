@@ -24,9 +24,9 @@ Options:
     --no-modify-path        Don't modify shell config files
 
 Examples:
-    curl -fsSL https://wondercat.ai/install.sh | bash
-    curl -fsSL https://wondercat.ai/install.sh | bash -s -- --version 0.1.0
-    curl -fsSL https://wondercat.ai/install.sh | bash -s -- --staging
+    curl -fsSL https://wonda.sh/install.sh | bash
+    curl -fsSL https://wonda.sh/install.sh | bash -s -- --version 0.1.0
+    curl -fsSL https://wonda.sh/install.sh | bash -s -- --staging
 EOF
 }
 
@@ -197,7 +197,26 @@ echo -e "       _#█████████@-"
 echo -e "           ,iIi:${NC}"
 echo -e ""
 echo -e "${MUTED}wonda ${NC}${version}${MUTED} installed successfully${NC}"
+echo -e "${MUTED}Binary: ${NC}${INSTALL_DIR}/${APP}"
 echo -e ""
+
+# Tell the user how to activate in the current shell
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo -e "${MUTED}To use wonda in this shell session:${NC}"
+    echo -e ""
+    echo -e "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+    echo -e ""
+    echo -e "${MUTED}Or reload your shell config:${NC}"
+    if [ -n "${config_file:-}" ]; then
+        echo -e ""
+        echo -e "  source ${config_file}"
+    else
+        echo -e ""
+        echo -e "  source ~/.bashrc  ${MUTED}# or ~/.zshrc${NC}"
+    fi
+    echo -e ""
+fi
+
 echo -e "${MUTED}Get started:${NC}"
 echo -e ""
 echo -e "  wonda auth login          ${MUTED}# Authenticate${NC}"
