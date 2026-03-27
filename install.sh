@@ -20,18 +20,15 @@ Usage: install.sh [options]
 Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 0.1.0)
-    --staging               Install the latest staging version
     --no-modify-path        Don't modify shell config files
 
 Examples:
     curl -fsSL https://wonda.sh/install.sh | bash
     curl -fsSL https://wonda.sh/install.sh | bash -s -- --version 0.1.0
-    curl -fsSL https://wonda.sh/install.sh | bash -s -- --staging
 EOF
 }
 
 requested_version=""
-staging=false
 no_modify_path=false
 
 while [[ $# -gt 0 ]]; do
@@ -46,7 +43,6 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
-        --staging) staging=true; shift ;;
         --no-modify-path) no_modify_path=true; shift ;;
         *) echo -e "${RED}Unknown option: $1${NC}" >&2; shift ;;
     esac
@@ -89,16 +85,9 @@ if [ -n "$requested_version" ]; then
         echo -e "${MUTED}Available releases: https://github.com/$REPO/releases${NC}"
         exit 1
     fi
-elif [ "$staging" = true ]; then
-    version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | \
-        sed -n 's/.*"tag_name": *"\(v[^"]*-staging[^"]*\)".*/\1/p' | head -1)
-    if [ -z "$version" ]; then
-        echo -e "${RED}Error: No staging release found${NC}"
-        exit 1
-    fi
 else
-    version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | \
-        sed -n 's/.*"tag_name": *"\(v[^"]*\)".*/\1/p' | grep -v staging | head -1)
+    version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | \
+        sed -n 's/.*"tag_name": *"\(v[^"]*\)".*/\1/p' | head -1)
     if [ -z "$version" ]; then
         echo -e "${RED}Error: No release found${NC}"
         exit 1
