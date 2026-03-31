@@ -68,11 +68,27 @@ Then ask your agent: *"Use wonda to generate a product video of this image."*
 
 ### Editing
 
-| Command | Description |
+TikTok/Reels-style video editing operations — designed for short-form social content.
+
+| Operation | What it does |
 |---|---|
-| `edit video` | Trim, crop, speed, overlay, merge, background removal, upscale, lip sync |
-| `edit image` | Background removal, upscale, vectorize |
-| `edit audio` | Audio editing operations |
+| `animatedCaptions` | Auto-transcribe and burn animated word-by-word captions |
+| `textOverlay` | Add styled text with custom fonts, positions, and sizing |
+| `editAudio` | Mix background music with video audio (volume control) |
+| `merge` | Stitch multiple clips into one video |
+| `overlay` | Picture-in-picture — layer one video over another |
+| `splitScreen` | Side-by-side or top-bottom split of two videos |
+| `trim` | Cut to a specific time range |
+| `speed` | Speed up or slow down |
+| `splitScenes` | Auto-detect and split scenes |
+| `extractAudio` | Pull the audio track from a video |
+| `reverseVideo` | Play backwards |
+| `skipSilence` | Remove silent gaps |
+| `imageCrop` | Crop to a target aspect ratio |
+| `birefnet-bg-removal` | Remove image background |
+| `bria-video-background-removal` | Remove video background |
+| `topaz-video-upscale` | Upscale video resolution (1-4x) |
+| `sync-lipsync-v2-pro` | Sync lip movements to audio |
 
 ### Publishing
 
@@ -123,18 +139,36 @@ wonda generate video --model sora2 \
   --attach "$MEDIA" --duration 8 --wait -o video.mp4
 ```
 
-### Multi-step pipeline
+### Add animated captions (TikTok-style)
 
 ```bash
-# Generate video → add music → add text overlay
+wonda edit video --operation animatedCaptions --media "$VID_MEDIA" \
+  --params '{"fontFamily":"TikTok Sans","position":"bottom-center","highlightColor":"#FFD700"}' \
+  --wait -o captioned.mp4
+```
+
+### Full pipeline: generate → music → captions → publish
+
+```bash
+# Generate a product video
 VID=$(wonda generate video --model sora2 --prompt "Ocean waves" --wait --quiet)
 VID_MEDIA=$(wonda jobs get inference "$VID" --jq '.outputs[0].media.mediaId')
 
+# Add background music
 MUSIC=$(wonda generate music --model suno-music --prompt "lo-fi ambient" --wait --quiet)
 MUSIC_MEDIA=$(wonda jobs get inference "$MUSIC" --jq '.outputs[0].media.mediaId')
+MIXED=$(wonda edit video --operation editAudio --media "$VID_MEDIA" --audio-media "$MUSIC_MEDIA" \
+  --params '{"videoVolume":80,"audioVolume":30}' --wait --quiet)
+MIXED_MEDIA=$(wonda jobs get editor "$MIXED" --jq '.outputs[0].mediaId')
 
-wonda edit video --operation editAudio --media "$VID_MEDIA" --audio-media "$MUSIC_MEDIA" \
-  --params '{"videoVolume":80,"audioVolume":30}' --wait -o final.mp4
+# Burn in animated captions
+FINAL=$(wonda edit video --operation animatedCaptions --media "$MIXED_MEDIA" \
+  --params '{"fontFamily":"Montserrat","position":"bottom-center"}' --wait --quiet)
+FINAL_MEDIA=$(wonda jobs get editor "$FINAL" --jq '.outputs[0].mediaId')
+
+# Publish
+wonda publish tiktok --media "$FINAL_MEDIA" --account tiktok_acct_123 \
+  --caption "Summer vibes" --privacy-level PUBLIC_TO_EVERYONE
 ```
 
 ### Publish to Instagram
