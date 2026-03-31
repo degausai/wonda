@@ -17,6 +17,10 @@ Images, video, music, audio, editing, and social publishing — all via CLI.
 
 Works with Claude Code · Cursor · Codex · Windsurf · Copilot · Cline · OpenCode · Zed — and any agent that can run shell commands.
 
+<br />
+
+<img src="assets/terminal.png" alt="wonda in action" width="560" />
+
 </div>
 
 ## Install
