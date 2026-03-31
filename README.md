@@ -19,13 +19,19 @@ Works with Claude Code · Cursor · Codex · Windsurf · Copilot · Cline · Ope
 
 ## Install
 
+![curl](https://img.shields.io/badge/curl-073551?style=flat-square&logo=curl&logoColor=white)
+
 ```bash
 curl -fsSL https://wonda.sh/install.sh | bash
 ```
 
+![Homebrew](https://img.shields.io/badge/Homebrew-FBB040?style=flat-square&logo=homebrew&logoColor=black)
+
 ```bash
 brew tap degausai/tap && brew install wonda
 ```
+
+![npm](https://img.shields.io/badge/npm-CB3837?style=flat-square&logo=npm&logoColor=white)
 
 ```bash
 npm i -g @degausai/wonda
