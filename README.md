@@ -15,7 +15,16 @@ Images, video, music, audio, editing, and social publishing — all via CLI.
 
 **You don't need to learn this CLI. Your agent already knows how to use it.**
 
-Works with Claude Code · Cursor · Codex · Windsurf · Copilot · Cline · OpenCode · Zed — and any agent that can run shell commands.
+![Claude Code](https://img.shields.io/badge/Claude_Code-d97706?style=flat-square)
+![Cursor](https://img.shields.io/badge/Cursor-000?style=flat-square)
+![Codex](https://img.shields.io/badge/Codex-10a37f?style=flat-square)
+![Windsurf](https://img.shields.io/badge/Windsurf-0ea5e9?style=flat-square)
+![Copilot](https://img.shields.io/badge/Copilot-2b3137?style=flat-square)
+![Cline](https://img.shields.io/badge/Cline-ec4899?style=flat-square)
+![OpenCode](https://img.shields.io/badge/OpenCode-6366f1?style=flat-square)
+![Zed](https://img.shields.io/badge/Zed-8b5cf6?style=flat-square)
+
+and any agent that can run shell commands.
 
 <br />
 
