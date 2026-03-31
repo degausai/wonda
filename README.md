@@ -13,7 +13,9 @@ Images, video, music, audio, editing, and social publishing — all via CLI.
 
 ---
 
-**Agent-first** — tell your AI agent to use `wonda`. It figures it out from `--help` and built-in skill files.
+**You don't need to learn this CLI. Your agent already knows how to use it.**
+
+Works with Claude Code · Cursor · Codex · Windsurf · Copilot · Cline · OpenCode · Zed — and any agent that can run shell commands.
 
 </div>
 
@@ -157,7 +159,7 @@ When stdout is piped, JSON mode is enabled automatically.
 
 ## AI agent integration
 
-Wonda ships with skill files that teach AI agents (Claude Code, Cursor, Windsurf, etc.) how to use every command — model selection, prompt strategies, content workflows, and publishing patterns.
+Just point your agent at `wonda` — it reads `--help`, finds the built-in skill file, and figures out model selection, prompt strategies, and content workflows on its own.
 
 ```bash
 wonda skill install              # Sync skill file to ~/.wonda/skill/
@@ -166,7 +168,7 @@ wonda skill list                 # Browse available content skills
 wonda skill get product-b-roll   # Fetch a specific content guide
 ```
 
-The skill file auto-syncs in the background. When an agent runs `wonda --help`, it discovers the skill file path and can read it immediately.
+The skill file auto-syncs in the background. No configuration needed — your agent discovers it automatically.
 
 ## Pricing
 
