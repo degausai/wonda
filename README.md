@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="wonda" width="600" />
-
 **AI-powered content generation from your terminal**
 
 Images, video, music, audio, editing, and social publishing — all via CLI.
