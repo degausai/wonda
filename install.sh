@@ -117,6 +117,31 @@ if ! curl -# -fSL -o "$tmp_dir/$archive" "$url"; then
     exit 1
 fi
 
+# Verify checksum
+checksums_url="https://github.com/$REPO/releases/download/${version}/checksums.txt"
+if curl -fsSL -o "$tmp_dir/checksums.txt" "$checksums_url" 2>/dev/null; then
+    expected=$(grep -F "$archive" "$tmp_dir/checksums.txt" | awk '{print $1}' || true)
+    if [ -n "$expected" ]; then
+        if command -v sha256sum >/dev/null 2>&1; then
+            actual=$(sha256sum "$tmp_dir/$archive" | awk '{print $1}')
+        elif command -v shasum >/dev/null 2>&1; then
+            actual=$(shasum -a 256 "$tmp_dir/$archive" | awk '{print $1}')
+        else
+            actual=""
+        fi
+
+        if [ -n "$actual" ]; then
+            if [ "$actual" != "$expected" ]; then
+                echo -e "${RED}Error: Checksum verification failed${NC}"
+                echo -e "${MUTED}Expected: ${NC}${expected}"
+                echo -e "${MUTED}Actual:   ${NC}${actual}"
+                exit 1
+            fi
+            echo -e "${MUTED}Checksum: ${NC}verified"
+        fi
+    fi
+fi
+
 # Extract
 if [ "$os" = "windows" ]; then
     unzip -q "$tmp_dir/$archive" -d "$tmp_dir"
