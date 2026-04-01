@@ -128,6 +128,17 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 | `models list\|info` | Available models and their parameters |
 | `pricing list\|estimate` | Pricing info and cost estimates |
 
+## Made with wonda
+
+<p align="center">
+<img src="assets/example-1.webp" alt="Product content" width="140" />&nbsp;&nbsp;
+<img src="assets/example-3.webp" alt="AI-generated content" width="140" />&nbsp;&nbsp;
+<img src="assets/example-5.webp" alt="Ad creative" width="140" />&nbsp;&nbsp;
+<img src="assets/example-4.webp" alt="Product ad" width="140" />
+</p>
+
+<p align="center"><em>Product videos, UGC-style content, ad creatives — generated, edited, and published from the terminal.</em></p>
+
 ## Examples
 
 ### Generate an image
