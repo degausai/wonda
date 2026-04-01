@@ -28,7 +28,7 @@ and any agent that can run shell commands.
 
 <br />
 
-<img src="assets/terminal.png" alt="wonda in action" width="560" />
+<img src="assets/terminal.gif" alt="wonda in action" width="560" />
 
 </div>
 
@@ -113,15 +113,27 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 | `splitScreen` | Side-by-side or top-bottom split of two videos |
 | `trim` | Cut to a specific time range |
 | `speed` | Speed up or slow down |
-| `splitScenes` | Auto-detect and split scenes |
+| `splitScenes` | Auto-detect and split scenes (or omit a scene) |
 | `extractAudio` | Pull the audio track from a video |
+| `extractFrame` | Extract a single frame at a specific timestamp |
 | `reverseVideo` | Play backwards |
 | `skipSilence` | Remove silent gaps |
+| `motionDesign` | Motion design and animation |
+| `enhanceAudio` | Enhance audio quality |
+| `voiceExtractor` | Isolate vocals from audio |
+| `audioTrim` | Trim audio files |
+| `imageToVideo` | Convert images to video |
 | `imageCrop` | Crop to a target aspect ratio |
 | `birefnet-bg-removal` | Remove image background |
 | `bria-video-background-removal` | Remove video background |
 | `topaz-video-upscale` | Upscale video resolution (1-4x) |
 | `sync-lipsync-v2-pro` | Sync lip movements to audio |
+
+### Analysis
+
+| Command | Description |
+|---|---|
+| `analyze video` | Extract composite frame grid + audio transcript for video understanding |
 
 ### Publishing
 
@@ -133,11 +145,26 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 | `publish tiktok-carousel` | Publish a photo carousel (2-35 images) |
 | `publish history` | View publish history |
 
+### Reddit
+
+| Command | Description |
+|---|---|
+| `reddit submit` | Submit a self or link post to a subreddit |
+| `reddit comment` | Reply to a post or comment |
+| `reddit vote` | Upvote or downvote |
+| `reddit subscribe` | Subscribe to a subreddit |
+| `reddit save` | Save a post |
+| `reddit delete` | Delete your post |
+| `reddit chat inbox` | List DM conversations |
+| `reddit chat messages` | Fetch messages from a conversation |
+| `reddit chat send` | Send a DM |
+| `reddit chat accept-all` | Accept pending chat requests |
+
 ### Marketing & Analytics
 
 | Command | Description |
 |---|---|
-| `scrape social` | Scrape Instagram/TikTok profiles (posts, engagement, bio) |
+| `scrape social` | Scrape Instagram/TikTok/Reddit profiles (posts, engagement, bio) |
 | `scrape ads` | Search the Meta Ads Library for competitor ads |
 | `analytics instagram\|tiktok` | Performance metrics for connected accounts |
 | `brand` | View brand identity, products, website data |
