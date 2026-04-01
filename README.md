@@ -61,6 +61,30 @@ wonda skill install -o .  # Install skill file for your AI assistant
 
 Then ask your agent: *"Use wonda to generate a product video of this image."*
 
+## Made with wonda
+
+<p align="center">
+<img src="assets/example-1.webp" alt="Product content" width="140" />&nbsp;&nbsp;
+<img src="assets/example-3.webp" alt="AI-generated content" width="140" />&nbsp;&nbsp;
+<img src="assets/example-5.webp" alt="Ad creative" width="140" />&nbsp;&nbsp;
+<img src="assets/example-4.webp" alt="Product ad" width="140" />
+</p>
+
+<p align="center"><em>Product videos, UGC-style content, ad creatives — generated, edited, and published from the terminal.</em></p>
+
+## Pricing
+
+An account is required. Sign up at [wonda.sh](https://wonda.sh).
+
+Generations cost credits. Top up anytime:
+
+```bash
+wonda topup    # Opens Stripe checkout
+wonda balance  # Check remaining credits
+```
+
+Use `wonda pricing estimate` to check costs before generating.
+
 ## Commands
 
 ### Generation
@@ -127,17 +151,6 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 | `skill list\|get\|install` | AI agent skill files and content guides |
 | `models list\|info` | Available models and their parameters |
 | `pricing list\|estimate` | Pricing info and cost estimates |
-
-## Made with wonda
-
-<p align="center">
-<img src="assets/example-1.webp" alt="Product content" width="140" />&nbsp;&nbsp;
-<img src="assets/example-3.webp" alt="AI-generated content" width="140" />&nbsp;&nbsp;
-<img src="assets/example-5.webp" alt="Ad creative" width="140" />&nbsp;&nbsp;
-<img src="assets/example-4.webp" alt="Product ad" width="140" />
-</p>
-
-<p align="center"><em>Product videos, UGC-style content, ad creatives — generated, edited, and published from the terminal.</em></p>
 
 ## Examples
 
@@ -233,19 +246,6 @@ wonda skill get product-b-roll   # Fetch a specific content guide
 ```
 
 The skill file auto-syncs in the background. No configuration needed — your agent discovers it automatically.
-
-## Pricing
-
-An account is required. Sign up at [wonda.sh](https://wonda.sh).
-
-Generations cost credits. Top up anytime:
-
-```bash
-wonda topup    # Opens Stripe checkout
-wonda balance  # Check remaining credits
-```
-
-Use `wonda pricing estimate` to check costs before generating.
 
 ## Platforms
 
