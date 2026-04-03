@@ -73,7 +73,8 @@ wonda x user-tweets @competitor                                # Competitor's re
 wonda reddit search "topic" --sort top --time week             # Reddit discussions
 wonda reddit feed marketing --sort hot                         # Subreddit trends
 wonda linkedin search "topic" --type COMPANIES                 # LinkedIn company/people research
-wonda linkedin profile competitor-vanity-name                  # LinkedIn profile intel
+wonda linkedin profile competitor-vanity-name                  # LinkedIn profile intel (includes follower count)
+wonda linkedin posts competitor-vanity-name -n 10              # Scrape recent posts with engagement stats
 ```
 
 ### Step 2: Check content skills
@@ -509,7 +510,8 @@ wonda linkedin auth check
 # Read
 wonda linkedin me                                    # Your identity
 wonda linkedin search "data engineer" --type PEOPLE  # Search (types: PEOPLE, COMPANIES, ALL)
-wonda linkedin profile johndoe                       # View profile (vanity name or URL)
+wonda linkedin profile johndoe                       # View profile (vanity name or URL) — includes followerCount
+wonda linkedin posts johndoe -n 10                   # Recent posts with likes/comments/reposts
 wonda linkedin company google                        # View company page
 wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
