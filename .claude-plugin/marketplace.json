@@ -1,0 +1,30 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "degausai",
+  "owner": {
+    "name": "Wonda",
+    "email": "support@wondercat.ai"
+  },
+  "metadata": {
+    "description": "Official Wonda plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "wonda",
+      "description": "AI-powered content generation from your terminal — images, video, music, audio, editing, and social publishing",
+      "version": "1.0.0",
+      "source": "./",
+      "homepage": "https://wonda.sh",
+      "repository": "https://github.com/degausai/wonda",
+      "keywords": [
+        "video",
+        "image",
+        "audio",
+        "generation",
+        "social-media",
+        "cli",
+        "content-creation"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "wonda",
+  "version": "1.0.0",
+  "description": "AI-powered content generation from your terminal — images, video, music, audio, editing, and social publishing",
+  "author": {
+    "name": "Wonda",
+    "url": "https://wonda.sh"
+  },
+  "homepage": "https://wonda.sh",
+  "repository": "https://github.com/degausai/wonda",
+  "license": "Proprietary",
+  "keywords": [
+    "video",
+    "image",
+    "audio",
+    "generation",
+    "social-media",
+    "cli",
+    "content-creation"
+  ],
+  "skills": "./skills/"
+}
