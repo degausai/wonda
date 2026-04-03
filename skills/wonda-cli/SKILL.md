@@ -512,6 +512,8 @@ wonda linkedin me                                    # Your identity
 wonda linkedin search "data engineer" --type PEOPLE  # Search (types: PEOPLE, COMPANIES, ALL)
 wonda linkedin profile johndoe                       # View profile (vanity name or URL) — includes followerCount
 wonda linkedin posts johndoe -n 10                   # Recent posts with likes/comments/reposts
+wonda linkedin posts johndoe -n 5 --comments         # Posts with top comments included
+wonda linkedin comments <activity-id>                 # Get comments on a specific post
 wonda linkedin company google                        # View company page
 wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
