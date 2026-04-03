@@ -156,6 +156,61 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 | `publish tiktok-carousel` | Publish a photo carousel (2-35 images) |
 | `publish history` | View publish history |
 
+### LinkedIn
+
+Cookie-based auth against LinkedIn's Voyager API. Supports search, profiles, companies, messaging, and engagement.
+
+| Command | Description |
+|---|---|
+| `linkedin auth set` | Store LinkedIn session cookies (`--li-at-value`, `--jsessionid-value`) |
+| `linkedin auth check` | Verify stored session validity |
+| `linkedin me` | Your LinkedIn identity |
+| `linkedin search` | Search people, companies, or all (`--type PEOPLE\|COMPANIES\|ALL`) |
+| `linkedin profile` | View a profile by vanity name or URL (includes follower count) |
+| `linkedin posts` | Recent posts with engagement stats (`--comments` to include top comments) |
+| `linkedin comments` | Get comments on a specific post |
+| `linkedin company` | View a company page |
+| `linkedin conversations` | List message threads |
+| `linkedin messages` | Read messages in a thread |
+| `linkedin notifications` | Recent notifications |
+| `linkedin connections` | Your connections |
+| `linkedin like` | Like a post |
+| `linkedin unlike` | Remove a like |
+| `linkedin send-message` | Send a message in a conversation |
+| `linkedin post` | Create a LinkedIn post (`--visibility ANYONE\|CONNECTIONS_ONLY`) |
+| `linkedin delete-post` | Delete a post |
+
+### X/Twitter
+
+Cookie-based auth against X's internal GraphQL API. Supports search, timelines, tweets, and social graph.
+
+| Command | Description |
+|---|---|
+| `x auth set` | Store X session cookies (`--auth-token`, `--ct0`) |
+| `x auth check` | Verify stored session validity |
+| `x search` | Search tweets |
+| `x user` | User profile |
+| `x user-tweets` | User's recent tweets |
+| `x read` | Read a single tweet |
+| `x replies` | Replies to a tweet |
+| `x thread` | Full thread (author's self-replies) |
+| `x home` | Home timeline (`--following` for Following tab) |
+| `x bookmarks` | Your bookmarks |
+| `x likes` | Your liked tweets |
+| `x following` | Who a user follows |
+| `x followers` | A user's followers |
+| `x lists` | User's lists (`--member-of` for memberships) |
+| `x list-timeline` | Tweets from a list |
+| `x news` | Trending topics (`--tab trending\|for_you\|news\|sports\|entertainment`) |
+| `x tweet` | Post a tweet |
+| `x reply` | Reply to a tweet |
+| `x like` | Like a tweet |
+| `x unlike` | Unlike a tweet |
+| `x retweet` | Retweet |
+| `x unretweet` | Unretweet |
+| `x follow` | Follow a user |
+| `x unfollow` | Unfollow a user |
+
 ### Reddit
 
 | Command | Description |
