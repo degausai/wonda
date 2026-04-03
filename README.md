@@ -61,6 +61,17 @@ wonda skill install -o .  # Install skill file for your AI assistant
 
 Then ask your agent: *"Use wonda to generate a product video of this image."*
 
+## Agent plugin
+
+Wonda ships as a native plugin for AI coding agents. Install it once and your agent learns every command, model, and workflow automatically.
+
+| Agent | Install |
+|---|---|
+| Any agent | `npx skills add degausai/wonda` |
+| Claude Code | `/plugin marketplace add degausai/wonda` then `/plugin install wonda@degausai` |
+| Gemini CLI | `gemini extensions install https://github.com/degausai/wonda` |
+| Project-local | `wonda skill install -o .` |
+
 ## Made with wonda
 
 <p align="center">
