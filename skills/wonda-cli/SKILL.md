@@ -87,37 +87,16 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                      | Description                                         | Input                     |
-| ------------------------- | --------------------------------------------------- | ------------------------- |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads      | user brief                |
-| product-b-roll            | Cinematic product footage                           | product image             |
-| product-b-roll-ad         | Product B-roll for ads with pacing                  | product image             |
-| multi-scene-showcase      | Multi-scene product showcase                        | 1-3 product images        |
-| apparel-video             | Fashion/clothing product video                      | apparel photo             |
-| artistic-product          | Jacquemus-style editorial product                   | product photo             |
-| premium-product-ad        | Premium luxury product ad                           | product photo             |
-| ugc-reaction              | UGC reaction/meme clip                              | optional product image    |
-| ugc-reaction-batch        | Batch TikTok-native UGC reactions                   | optional product image    |
-| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts | reel or TikTok URL        |
-| ugc-talking-organic       | Organic talking-to-camera                           | optional reference        |
-| ugc-dance-motion          | Dance/motion transfer                               | image + video             |
-| ugc-holding-product       | Product testimonial UGC                             | optional product image    |
-| ugc-talking-short         | Short talking head (2 clips)                        | optional reference        |
-| ugc-talking-long          | Long talking head (20s+)                            | optional reference        |
-| fashion-film              | Cinematic fashion/beauty film                       | reference images          |
-| beauty-hero               | Beauty product hero shot                            | product photo             |
-| tech-cinematic            | Tech product multi-scene                            | product photo             |
-| interior-scene            | Ambient interior/lifestyle scene                    | none (generative)         |
-| dynamic-ad                | Fintech/SaaS/app ad creative                        | brand imagery             |
-| surreal-product           | Surreal giant-product concept                       | product photo             |
-| single-image              | Single hero image                                   | optional reference        |
-| image-series              | 6-image series (carousel-ready)                     | optional reference        |
-| video-remix               | Remix/edit existing video                           | video                     |
-| apply-style               | Apply visual style to image                         | image                     |
-| animated-captions         | Add word-by-word animated captions                  | video                     |
-| skip-silence              | Remove silent gaps between speech                   | video                     |
-| twitter-influencer-search | Find X influencers and amplifiers                   | competitor/niche keywords |
-| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas  | subreddit + product       |
+| Slug                      | Description                                                        | Input                     |
+| ------------------------- | ------------------------------------------------------------------ | ------------------------- |
+| product-video             | Product/scene video — prompt library for all categories            | optional product image    |
+| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll | optional reference        |
+| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy              | optional product image    |
+| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                | reel or TikTok URL        |
+| ugc-dance-motion          | Dance/motion transfer                                              | image + video             |
+| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                     | user brief                |
+| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                 | subreddit + product       |
+| twitter-influencer-search | Find X influencers and amplifiers                                  | competitor/niche keywords |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -587,8 +566,9 @@ Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pa
 Direct messaging via the Matrix protocol. Requires a separate chat token (different from the session cookie).
 
 ```bash
-# Auth setup (get token from DevTools → Console → JSON.parse(localStorage.getItem('chat:access-token')).token)
-wonda reddit chat auth-set --token <matrix-token>
+# Auth setup (get token_v2 from DevTools → Application → Cookies → reddit.com)
+# Fallback if token_v2 doesn't work: DevTools → Console → localStorage.getItem('chat:matrix-access-token')
+wonda reddit chat auth-set --token <token_v2>
 
 # Read
 wonda reddit chat inbox                                  # List DM conversations with latest messages
