@@ -88,16 +88,17 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                      | Description                                                        | Input                     |
-| ------------------------- | ------------------------------------------------------------------ | ------------------------- |
-| product-video             | Product/scene video — prompt library for all categories            | optional product image    |
-| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll | optional reference        |
-| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy              | optional product image    |
-| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                | reel or TikTok URL        |
-| ugc-dance-motion          | Dance/motion transfer                                              | image + video             |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                     | user brief                |
-| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                 | subreddit + product       |
-| twitter-influencer-search | Find X influencers and amplifiers                                  | competitor/niche keywords |
+| Slug                      | Description                                                  | Input                         |
+| ------------------------- | ------------------------------------------------------------ | ----------------------------- |
+| ugc-reaction-batch        | Batch TikTok/IG UGC reactions with viral strategy            | optional product image        |
+| e2e-viral-ugc             | Scrape what works → ideate hooks → generate → post           | reel or TikTok URL            |
+| ugc-ad                    | Talking-head UGC ad — single clip, PIP, or 20s+ with B-roll  | optional reference            |
+| product-video             | Product/scene video — prompt library for all categories      | optional product image        |
+| twitter-influencer-search | Find X influencers and amplifiers                            | competitor/niche keywords     |
+| reddit-viral-research     | Scrape top posts, analyze virality, generate ideas           | subreddit + product           |
+| marketing-brain           | Marketing strategy brain — hooks, visuals, ads               | user brief                    |
+| clone-ugc-dance           | Clone any video — dance/motion transfer                      | image + video                 |
+| extract-apply-style       | Extract visual style from image, generate new subjects in it | reference image + description |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -653,6 +654,8 @@ wonda capabilities                                    # Full platform capabiliti
 wonda pricing list                                    # Pricing for all models
 wonda pricing estimate --model seedance-2 --prompt "..." # Cost estimate
 wonda style list                                      # Available visual styles
+# Extract style JSON from an image (for extract-apply-style skill):
+# curl -X POST "$WONDA_BASE_URL/api/v1/styles/extract" -H "Authorization: Bearer $WONDA_API_KEY" -H "Content-Type: application/json" -d '{"mediaId":"<id>"}'
 wonda topup --amount 20                               # Top up credits ($5 minimum, opens Stripe)
 ```
 
