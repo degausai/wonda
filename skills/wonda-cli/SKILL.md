@@ -35,7 +35,7 @@ Not all commands are available to every account type:
 | **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                             |
 | **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                    |
 
-If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
+If a command returns a `403` error, check your plan at https://wonda.sh/settings/billing.
 
 ### Global output flags
 
@@ -99,6 +99,7 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 | marketing-brain           | Marketing strategy brain — hooks, visuals, ads               | user brief                    |
 | clone-ugc-dance           | Clone any video — dance/motion transfer                      | image + video                 |
 | extract-apply-style       | Extract visual style from image, generate new subjects in it | reference image + description |
+| analyze-reel              | Analyze a viral reel/TikTok — breakdown + 5 content ideas    | reel or TikTok URL            |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -440,6 +441,10 @@ wonda scrape ads-status <taskId>                      # Get results of an ads se
 # Download a single reel or TikTok video
 SCRAPE=$(wonda scrape video --url "https://www.instagram.com/reel/ABC123/" --wait --quiet)
 # → returns scrape result with mediaId in the media array
+
+# Scrape a reel then analyze it (extract frames + transcript)
+VIDEO_MEDIA=$(wonda scrape video --url "https://www.instagram.com/reel/ABC123/" --wait --jq '.media[0].mediaId')
+wonda analyze video --media $VIDEO_MEDIA --wait -o /tmp/grid.jpg
 
 # Publish
 wonda publish instagram --media <id> --account <accountId> --caption "New drop"
