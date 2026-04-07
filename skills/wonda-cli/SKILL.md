@@ -35,7 +35,7 @@ Not all commands are available to every account type:
 | **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                             |
 | **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                    |
 
-If a command returns a `403` error, check your plan at https://wonda.sh/settings/billing.
+If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
 ### Global output flags
 
@@ -73,8 +73,7 @@ wonda x user-tweets @competitor                                # Competitor's re
 wonda reddit search "topic" --sort top --time week             # Reddit discussions
 wonda reddit feed marketing --sort hot                         # Subreddit trends
 wonda linkedin search "topic" --type COMPANIES                 # LinkedIn company/people research
-wonda linkedin profile competitor-vanity-name                  # LinkedIn profile intel (includes follower count)
-wonda linkedin posts competitor-vanity-name -n 10              # Scrape recent posts with engagement stats
+wonda linkedin profile competitor-vanity-name                  # LinkedIn profile intel
 ```
 
 ### Step 2: Check content skills
@@ -88,18 +87,16 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                      | Description                                                  | Input                         |
-| ------------------------- | ------------------------------------------------------------ | ----------------------------- |
-| ugc-reaction-batch        | Batch TikTok/IG UGC reactions with viral strategy            | optional product image        |
-| e2e-viral-ugc             | Scrape what works → ideate hooks → generate → post           | reel or TikTok URL            |
-| ugc-ad                    | Talking-head UGC ad — single clip, PIP, or 20s+ with B-roll  | optional reference            |
-| product-video             | Product/scene video — prompt library for all categories      | optional product image        |
-| twitter-influencer-search | Find X influencers and amplifiers                            | competitor/niche keywords     |
-| reddit-viral-research     | Scrape top posts, analyze virality, generate ideas           | subreddit + product           |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads               | user brief                    |
-| clone-ugc-dance           | Clone any video — dance/motion transfer                      | image + video                 |
-| extract-apply-style       | Extract visual style from image, generate new subjects in it | reference image + description |
-| analyze-reel              | Analyze a viral reel/TikTok — breakdown + 5 content ideas    | reel or TikTok URL            |
+| Slug                      | Description                                                        | Input                     |
+| ------------------------- | ------------------------------------------------------------------ | ------------------------- |
+| product-video             | Product/scene video — prompt library for all categories            | optional product image    |
+| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll | optional reference        |
+| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy              | optional product image    |
+| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                | reel or TikTok URL        |
+| ugc-dance-motion          | Dance/motion transfer                                              | image + video             |
+| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                     | user brief                |
+| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                 | subreddit + product       |
+| twitter-influencer-search | Find X influencers and amplifiers                                  | competitor/niche keywords |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -176,10 +173,10 @@ Default: `nano-banana-2`. Only use others when:
 - Photorealistic/creative imagery → `grok-imagine` or `grok-imagine-pro`
 - Spicy/NSFW content → `cookie` (SDXL-based, tag-based or natural language prompts)
 
-**Cookie model (`cookie`):** SDXL image generation. Accepts both danbooru-style tags (`1cat, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
+**Cookie model (`cookie`):** SDXL with DMD acceleration and hires fix. Accepts both danbooru-style tags (`1girl, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
 
 ```bash
-wonda generate image --model cookie --prompt "1cat, portrait, soft lighting" --wait -o out.png
+wonda generate image --model cookie --prompt "1girl, portrait, soft lighting" --wait -o out.png
 wonda generate image --model cookie --prompt "a woman in a garden, golden hour" \
   --negative-prompt "ugly, blurry, watermark" --seed 42 --wait -o out.png
 ```
@@ -194,13 +191,13 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 
 **Image-to-video routing (MANDATORY when attaching a reference image):**
 
-- Person/face visible in the **reference image** → MUST use `kling_3_pro_i2v` (preserves identity better for faces)
+- Person/face visible in the **reference image** → MUST use `kling_3_pro` (preserves identity better for faces)
 - No person in reference image → use `seedance-2`
 - **Text-to-video (no reference image):** Seedance 2 generates people fine. This rule ONLY applies when you `--attach` an image.
 
 **Kling model family:**
 
-- `kling_3_pro_i2v` — Best for image-to-video, supports start/end images, custom elements (@Element1, @Element2), 3-15s duration, 16:9/9:16/1:1
+- `kling_3_pro` — Text-to-video and image-to-video, supports start/end images, custom elements (@Element1, @Element2), 3-15s duration, 16:9/9:16/1:1
 - `kling_2_6_pro` — General purpose, 5-10s, 16:9/9:16/1:1, text-to-video and image-to-video
 - `kling_2_6_motion_control` — Motion transfer: requires both a reference image AND a reference video, recreates the video's motion with the image's appearance
 - `kling2_5-pro` — Budget Kling option, 5-10s, supports first/last frame images
@@ -213,8 +210,8 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 
 Seedance family (DEFAULT video model, watermarks automatically removed):
 
-- `seedance-2` — Base Seedance 2.0 (T2V/I2V, 5-15s, basic/high quality)
-- `seedance-2-omni` — Multi-reference generation (images, video, audio refs)
+- `seedance-2` — Base Seedance 2.0 (T2V/I2V, 5-15s, high=standard/basic=fast)
+- `seedance-2-omni` — Multi-reference generation (images, audio refs)
 - `seedance-2-video-edit` — Edit existing video via text prompt
 
 **Video durations:** Accepted `--duration` values vary by model. Check with `wonda capabilities` or `wonda models info <slug>`.
@@ -266,7 +263,7 @@ MEDIA=$(wonda media upload ./product.jpg --quiet)
 wonda generate video --model seedance-2 --prompt "camera slowly pushes in, product rotates" \
   --attach $MEDIA --duration 5 --params '{"quality":"high"}' --wait -o animated.mp4
 # Person in image → Kling (ONLY when attaching a reference image with a person)
-wonda generate video --model kling_3_pro_i2v --prompt "the person turns and smiles" \
+wonda generate video --model kling_3_pro --prompt "the person turns and smiles" \
   --attach $MEDIA --duration 5 --wait -o person.mp4
 ```
 
@@ -442,10 +439,6 @@ wonda scrape ads-status <taskId>                      # Get results of an ads se
 SCRAPE=$(wonda scrape video --url "https://www.instagram.com/reel/ABC123/" --wait --quiet)
 # → returns scrape result with mediaId in the media array
 
-# Scrape a reel then analyze it (extract frames + transcript)
-VIDEO_MEDIA=$(wonda scrape video --url "https://www.instagram.com/reel/ABC123/" --wait --jq '.media[0].mediaId')
-wonda analyze video --media $VIDEO_MEDIA --wait -o /tmp/grid.jpg
-
 # Publish
 wonda publish instagram --media <id> --account <accountId> --caption "New drop"
 wonda publish instagram --media <id> --account <accountId> --caption "..." --alt-text "..." --product IMAGE --share-to-feed
@@ -516,10 +509,7 @@ wonda linkedin auth check
 # Read
 wonda linkedin me                                    # Your identity
 wonda linkedin search "data engineer" --type PEOPLE  # Search (types: PEOPLE, COMPANIES, ALL)
-wonda linkedin profile johndoe                       # View profile (vanity name or URL) — includes followerCount
-wonda linkedin posts johndoe -n 10                   # Recent posts with likes/comments/reposts
-wonda linkedin posts johndoe -n 5 --comments         # Posts with top comments included
-wonda linkedin comments <activity-id>                 # Get comments on a specific post
+wonda linkedin profile johndoe                       # View profile (vanity name or URL)
 wonda linkedin company google                        # View company page
 wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
@@ -576,9 +566,8 @@ Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pa
 Direct messaging via the Matrix protocol. Requires a separate chat token (different from the session cookie).
 
 ```bash
-# Auth setup (get token_v2 from DevTools → Application → Cookies → reddit.com)
-# Fallback if token_v2 doesn't work: DevTools → Console → localStorage.getItem('chat:matrix-access-token')
-wonda reddit chat auth-set --token <token_v2>
+# Auth setup (get token from DevTools → Console → JSON.parse(localStorage.getItem('chat:access-token')).token)
+wonda reddit chat auth-set --token <matrix-token>
 
 # Read
 wonda reddit chat inbox                                  # List DM conversations with latest messages
@@ -659,8 +648,6 @@ wonda capabilities                                    # Full platform capabiliti
 wonda pricing list                                    # Pricing for all models
 wonda pricing estimate --model seedance-2 --prompt "..." # Cost estimate
 wonda style list                                      # Available visual styles
-# Extract style JSON from an image (for extract-apply-style skill):
-# curl -X POST "$WONDA_BASE_URL/api/v1/styles/extract" -H "Authorization: Bearer $WONDA_API_KEY" -H "Content-Type: application/json" -d '{"mediaId":"<id>"}'
 wonda topup --amount 20                               # Top up credits ($5 minimum, opens Stripe)
 ```
 
@@ -693,7 +680,7 @@ wonda alignment extract-timestamps --model <model> --attach <mediaId> --wait
 
 | Symptom                          | Likely Cause                                  | Fix                                                    |
 | -------------------------------- | --------------------------------------------- | ------------------------------------------------------ |
-| Sora rejected image              | Person in image                               | Switch to `kling_3_pro_i2v`                            |
+| Sora rejected image              | Person in image                               | Switch to `kling_3_pro`                                |
 | Video adds objects not in source | Motion prompt describes elements not in image | Simplify to camera movement and atmosphere only        |
 | Text unreadable in video         | AI tried to render text in generation         | Remove text from video prompt, use textOverlay instead |
 | Hands look wrong                 | Complex hand actions in prompt                | Simplify to passive positions or frame to exclude      |

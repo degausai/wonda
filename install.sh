@@ -188,6 +188,34 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" = "true" ]; then
     echo "$INSTALL_DIR" >> "$GITHUB_PATH"
 fi
 
+# ---------------------------------------------------------------------------
+# Detect existing installs from other methods
+# ---------------------------------------------------------------------------
+
+# npm global install
+npm_wonda=""
+if command -v npm >/dev/null 2>&1; then
+    npm_wonda=$(npm list -g @degausai/wonda --depth=0 2>/dev/null | grep -c "@degausai/wonda" || true)
+fi
+if [ "${npm_wonda:-0}" -gt 0 ]; then
+    echo -e "${RED}⚠  wonda is also installed via npm.${NC}"
+    echo -e "${MUTED}  The shell-installed version will take precedence on PATH.${NC}"
+    echo -e "${MUTED}  To avoid conflicts, remove the npm version:${NC}"
+    echo -e ""
+    echo -e "  npm uninstall -g @degausai/wonda"
+    echo -e ""
+fi
+
+# Homebrew install
+if command -v brew >/dev/null 2>&1 && brew list wonda >/dev/null 2>&1; then
+    echo -e "${RED}⚠  wonda is also installed via Homebrew.${NC}"
+    echo -e "${MUTED}  The shell-installed version will take precedence on PATH.${NC}"
+    echo -e "${MUTED}  To avoid conflicts, remove the Homebrew version:${NC}"
+    echo -e ""
+    echo -e "  brew uninstall wonda"
+    echo -e ""
+fi
+
 # Done
 echo -e ""
 echo -e "${PURPLE}               l███+.        ~█▓▓>"
