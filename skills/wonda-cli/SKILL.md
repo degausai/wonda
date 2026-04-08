@@ -171,12 +171,12 @@ Default: `nano-banana-2`. Only use others when:
 - NanoBanana fails (rare) → `seedream-4-5`
 - Need readable text in image → `gpt-image-1-5`
 - Photorealistic/creative imagery → `grok-imagine` or `grok-imagine-pro`
-- Spicy/NSFW content → `cookie` (SDXL-based, tag-based or natural language prompts)
+- Spicy content → `cookie` (SDXL-based, tag-based or natural language prompts) — **ONLY select when the user explicitly asks for spicy content. Never auto-select.**
 
-**Cookie model (`cookie`):** SDXL with DMD acceleration and hires fix. Accepts both danbooru-style tags (`1girl, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
+**Cookie model (`cookie`):** SDXL with DMD acceleration and hires fix. **Restricted: only use when the user explicitly requests spicy content.** Accepts both danbooru-style tags (`1cat, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
 
 ```bash
-wonda generate image --model cookie --prompt "1girl, portrait, soft lighting" --wait -o out.png
+wonda generate image --model cookie --prompt "1cat, portrait, soft lighting" --wait -o out.png
 wonda generate image --model cookie --prompt "a woman in a garden, golden hour" \
   --negative-prompt "ugly, blurry, watermark" --seed 42 --wait -o out.png
 ```
