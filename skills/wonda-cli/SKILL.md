@@ -153,6 +153,47 @@ wonda edit video --operation animatedCaptions --media $VID_MEDIA \
 
 The video's original audio is preserved. Do NOT replace the audio with TTS — Sora already generated the speech.
 
+**Transitions (effects pipelines on a single video):**
+
+```bash
+wonda transitions presets                            # List built-in presets (JSON)
+wonda transitions operations                         # Grouped by category (analysis/effect/...)
+wonda transitions operations --json                  # Full per-param metadata
+wonda transitions llms                               # Full reference (presets + ops + dependencies)
+wonda transitions run --media $VID --preset flash_glow --wait -o out.mp4
+# Or build a custom pipeline of steps:
+wonda transitions run --media $VID \
+  --steps '[{"glow":{"spread":8}},{"scene_flash":{}}]' --wait -o out.mp4
+wonda transitions job <jobId>                        # Poll a transition job
+```
+
+Use `--preset` OR `--steps` (not both). Requires a full (logged-in) account. **Always read `wonda transitions llms` first when composing a custom pipeline** — it documents the detect→segment→effect dependencies and which ops need masks.
+
+**Preset variables (`variables` block).** Each preset declares the template variables it accepts under `variables` in `wonda transitions presets`. Each entry has `name`, `description`, and `required`. Required variables MUST be supplied or the job is rejected with a 400 — no more silent skipping. Pass them with `--var name=value` (repeatable) or, for the common `prompt` case, the `--prompt` shortcut:
+
+```bash
+# flash_glow_prompted requires { prompt }
+wonda transitions run --media $VID --preset flash_glow_prompted \
+  --prompt "woman in white dress" --wait -o out.mp4
+
+# text_behind_person requires { prompt, text }
+wonda transitions run --media $VID --preset text_behind_person \
+  --var prompt="the person" --var text="HELLO WORLD" --wait -o out.mp4
+```
+
+The `prompt` variable is a **detection text query** (Grounding DINO target describing which subject to mask), not a content-generation prompt. For presets that don't declare a `prompt` variable but still list `sam2`/`clip` in `models`, detection auto-picks the most recurring subject via CLIP — no variable needed.
+
+Building a custom `--steps` pipeline that uses `detect` + `segment`? Add a `detect` step with `method: grounding_dino` and put the subject description in that step's `prompt` param (or use `method: clip` for auto-detect).
+
+**Multi-scene presets (`requiresMultiScene: true`).** Some presets use `scene_split` and expect a video with multiple cuts/scenes. Check `requiresMultiScene` in `wonda transitions presets` — if true, feeding a single continuous shot will produce only one scene and the effect may look underwhelming. Combine clips first or use a video with natural cuts.
+
+**Per-step overrides (`--overrides`).** Tweak individual params of a preset's steps without rewriting the whole pipeline. Shape is **nested**: `{stepName: {paramName: value}}`. Step and param names come from `wonda transitions operations --json`.
+
+```bash
+wonda transitions run --media $VID --preset flash_glow \
+  --overrides '{"glow":{"spread":12},"zoom":{"end":2.5}}' --wait -o out.mp4
+```
+
 **Output URL paths differ by job type:**
 
 - Inference jobs (generate, audio): `.outputs[0].media.url` and `.outputs[0].media.mediaId`
@@ -515,8 +556,11 @@ wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
+wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
 
 # Write
+wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
+wonda linkedin connect <vanity-name> -m "Hey!" --browser  # Full stealth via real browser (Patchright)
 wonda linkedin like <activity-urn>                   # Like a post
 wonda linkedin unlike <activity-urn>                 # Remove a like
 wonda linkedin send-message <conversation-urn> "Hi!" # Send a message
@@ -525,6 +569,11 @@ wonda linkedin delete-post <activity-id>             # Delete a post
 ```
 
 Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--delay <ms>`.
+
+**Connection request modes:** The `connect` command has two modes:
+
+- **Default (API):** Voyager REST API with fingerprint mitigations (profile visit → drawer warm-up → connect). Fast (~3s), supports notes via `customMessage`.
+- **`--browser` (Patchright):** Launches a real undetected Chrome browser, navigates to the profile, and clicks through the UI. Zero fingerprinting risk. Slower (~10s) but fully safe. Use this as a fallback if you want full protection. Requires: `npm i patchright && npx patchright install chromium`.
 
 ### Reddit
 
