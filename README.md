@@ -34,22 +34,16 @@ and any agent that can run shell commands.
 
 ## Install
 
-![curl](https://img.shields.io/badge/curl-073551?style=flat-square&logo=curl&logoColor=white)
+![npm](https://img.shields.io/badge/npm-CB3837?style=flat-square&logo=npm&logoColor=white)
 
 ```bash
-curl -fsSL https://wonda.sh/install.sh | bash
+npm i -g @degausai/wonda
 ```
 
 ![Homebrew](https://img.shields.io/badge/Homebrew-FBB040?style=flat-square&logo=homebrew&logoColor=black)
 
 ```bash
 brew tap degausai/tap && brew install wonda
-```
-
-![npm](https://img.shields.io/badge/npm-CB3837?style=flat-square&logo=npm&logoColor=white)
-
-```bash
-npm i -g @degausai/wonda
 ```
 
 ## Get started
@@ -158,11 +152,11 @@ TikTok/Reels-style video editing operations — designed for short-form social c
 
 ### LinkedIn
 
-Cookie-based auth against LinkedIn's Voyager API. Supports search, profiles, companies, messaging, and engagement.
+Supports search, profiles, companies, messaging, and engagement.
 
 | Command | Description |
 |---|---|
-| `linkedin auth set` | Store LinkedIn session cookies (`--li-at-value`, `--jsessionid-value`) |
+| `linkedin auth set` | Store LinkedIn session credentials (see `wonda linkedin auth --help`) |
 | `linkedin auth check` | Verify stored session validity |
 | `linkedin me` | Your LinkedIn identity |
 | `linkedin search` | Search people, companies, or all (`--type PEOPLE\|COMPANIES\|ALL`) |
@@ -182,11 +176,11 @@ Cookie-based auth against LinkedIn's Voyager API. Supports search, profiles, com
 
 ### X/Twitter
 
-Cookie-based auth against X's internal GraphQL API. Supports search, timelines, tweets, and social graph.
+Supports search, timelines, tweets, and social graph.
 
 | Command | Description |
 |---|---|
-| `x auth set` | Store X session cookies (`--auth-token`, `--ct0`) |
+| `x auth set` | Store X session credentials (see `wonda x auth --help`) |
 | `x auth check` | Verify stored session validity |
 | `x search` | Search tweets |
 | `x user` | User profile |
