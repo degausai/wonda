@@ -84,7 +84,7 @@ An account is required. Sign up at [wonda.sh](https://wonda.sh).
 Generations cost credits. Top up anytime:
 
 ```bash
-wonda topup    # Opens Stripe checkout
+wonda topup    # Add credits
 wonda balance  # Check remaining credits
 ```
 
