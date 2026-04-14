@@ -12,18 +12,17 @@ Wonda CLI is a content creation toolkit for terminal-based agents. Use it to gen
 If `wonda` is not found on PATH, install it first:
 
 ```bash
-curl -fsSL https://wonda.sh/install.sh | bash
-```
+# npm
+npm i -g @degausai/wonda
 
-Or via Homebrew: `brew tap degausai/tap && brew install wonda`
-Or via npm: `npm i -g @degausai/wonda`
+# Homebrew
+brew tap degausai/tap && brew install wonda
+```
 
 ## Setup
 
-- **Auth**: `wonda auth login` (opens browser) or `export WONDERCAT_API_KEY=sk_...` or `wonda config set api-key sk_...`
-- **Base URL** (local dev): `export WONDERCAT_BASE_URL=http://localhost:14692`
+- **Auth**: `wonda auth login` (opens browser, recommended) or set `WONDERCAT_API_KEY` env var
 - **Verify**: `wonda auth check`
-- **Config**: `wonda config set <key> <value>` / `wonda config get <key>` (keys: `api-key`, `base-url`)
 
 ### Access tiers
 
@@ -97,6 +96,7 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 | marketing-brain           | Marketing strategy brain — hooks, visuals, ads                     | user brief                |
 | reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                 | subreddit + product       |
 | twitter-influencer-search | Find X influencers and amplifiers                                  | competitor/niche keywords |
+| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal             | app screenshot + audience |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -141,9 +141,7 @@ The `animatedCaptions` operation handles everything in one step — it extracts 
 ```bash
 # Generate a video with speech audio
 VID_JOB=$(wonda generate video --model seedance-2 --prompt "..." --duration 5 --aspect-ratio 9:16 --params '{"quality":"high"}' --wait --quiet)
-VID_URL=$(wonda jobs get inference $VID_JOB --jq '.outputs[0].media.url')
-wonda media download "$VID_URL" -o /tmp/vid.mp4
-VID_MEDIA=$(wonda media upload /tmp/vid.mp4 --quiet)
+VID_MEDIA=$(wonda jobs get inference $VID_JOB --jq '.outputs[0].media.mediaId')
 
 # Add animated captions (single step)
 wonda edit video --operation animatedCaptions --media $VID_MEDIA \
@@ -210,7 +208,7 @@ Default: `nano-banana-2`. Only use others when:
 - Need background removal → `birefnet-bg-removal`
 - Cheapest possible → `z-image`
 - NanoBanana fails (rare) → `seedream-4-5`
-- Need readable text in image → `gpt-image-1-5`
+- Need readable text in image → `nano-banana-pro`
 - Photorealistic/creative imagery → `grok-imagine` or `grok-imagine-pro`
 - Spicy content → `cookie` (SDXL-based, tag-based or natural language prompts) — **ONLY select when the user explicitly asks for spicy content. Never auto-select.**
 
@@ -296,6 +294,12 @@ Three cases, no exceptions:
 
 These patterns show how to compose multi-step pipelines by chaining CLI commands. Each step's output feeds into the next.
 
+> **No need to download and re-upload between steps.** Every generation and edit
+> produces a media ID in its output. Pass that ID directly to the next command
+> via `--media` or `--audio-media`. Use `--jq '.outputs[0].media.mediaId'`
+> for inference jobs and `--jq '.outputs[0].mediaId'` for editor jobs.
+> Only use `-o <file>` on the FINAL step to download the finished output.
+
 ### Animate an image to video
 
 ```bash
@@ -314,9 +318,7 @@ wonda generate video --model kling_3_pro --prompt "the person turns and smiles" 
 # Generate TTS
 TTS_JOB=$(wonda audio speech --model elevenlabs-tts --prompt "The script" \
   --params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}' --wait --quiet)
-TTS_URL=$(wonda jobs get inference $TTS_JOB --jq '.outputs[0].media.url')
-wonda media download "$TTS_URL" -o /tmp/tts.mp3
-TTS_MEDIA=$(wonda media upload /tmp/tts.mp3 --quiet)
+TTS_MEDIA=$(wonda jobs get inference $TTS_JOB --jq '.outputs[0].media.mediaId')
 # Mix onto video (mute original, full voiceover)
 wonda edit video --operation editAudio --media $VID_MEDIA --audio-media $TTS_MEDIA \
   --params '{"videoVolume":0,"audioVolume":100}' --wait -o with-voice.mp4
@@ -365,11 +367,29 @@ wonda edit video --operation textOverlay --media $VIDEO_MEDIA \
 ```bash
 MUSIC_JOB=$(wonda generate music --model suno-music \
   --prompt "upbeat lo-fi hip hop, warm vinyl crackle" --wait --quiet)
-MUSIC_URL=$(wonda jobs get inference $MUSIC_JOB --jq '.outputs[0].media.url')
-wonda media download "$MUSIC_URL" -o /tmp/music.mp3
-MUSIC_MEDIA=$(wonda media upload /tmp/music.mp3 --quiet)
+MUSIC_MEDIA=$(wonda jobs get inference $MUSIC_JOB --jq '.outputs[0].media.mediaId')
 wonda edit video --operation editAudio --media $VID_MEDIA --audio-media $MUSIC_MEDIA \
   --params '{"videoVolume":100,"audioVolume":30}' --wait -o with-music.mp4
+```
+
+### Editor output chaining
+
+When chaining multiple editor operations (e.g., editAudio → animatedCaptions → textOverlay), extract the media ID from each editor job output and pass it to the next step. Note the jq path differs from inference jobs:
+
+```bash
+# Inference jobs: .outputs[0].media.mediaId
+# Editor jobs:    .outputs[0].mediaId
+
+EDIT_JOB=$(wonda edit video --operation editAudio --media $VID --audio-media $AUDIO \
+  --params '{"videoVolume":0,"audioVolume":100}' --wait --quiet)
+STEP1_MEDIA=$(wonda jobs get editor $EDIT_JOB --jq '.outputs[0].mediaId')
+
+CAP_JOB=$(wonda edit video --operation animatedCaptions --media $STEP1_MEDIA \
+  --params '{"fontFamily":"TikTok Sans SemiCondensed","position":"bottom-center","sizePercent":80,"strokeWidth":2.5,"fontSizeScale":0.8,"highlightColor":"rgb(252, 61, 61)"}' --wait --quiet)
+STEP2_MEDIA=$(wonda jobs get editor $CAP_JOB --jq '.outputs[0].mediaId')
+
+wonda edit video --operation textOverlay --media $STEP2_MEDIA \
+  --prompt-text "Hook text" --params '{"position":"top-center","fontFamily":"TikTok Sans SemiCondensed","sizePercent":66,"fontSizeScale":0.5,"strokeWidth":4.5}' --wait -o final.mp4
 ```
 
 ### Merge multiple clips
@@ -449,10 +469,11 @@ wonda generate video --model topaz-video-upscale --attach $VIDEO_MEDIA \
 | `speed`            | video_0                     | speed (multiplier: 2 = 2x faster)                                             |
 | `extractAudio`     | video_0                     | Extracts audio track                                                          |
 | `reverseVideo`     | video_0                     | Plays backwards                                                               |
-| `skipSilence`      | video_0                     | maxSilenceDuration (default 0.3), padding (default 0.03)                      |
+| `skipSilence`      | video_0                     | maxSilenceDuration (default 0.03)                                             |
 | `imageCrop`        | video_0                     | aspectRatio                                                                   |
+| `textOverlay`      | video_0 (image)             | Same as video textOverlay — works on images, outputs image (png/jpg)          |
 
-Valid textOverlay fonts: Inter, Montserrat, Bebas Neue, Oswald, TikTok Sans, Poppins, Raleway, Anton, Comic Cat, Gavency
+Valid textOverlay fonts: Inter, Montserrat, Bebas Neue, Oswald, TikTok Sans, TikTok Sans Condensed, TikTok Sans SemiCondensed, TikTok Sans SemiExpanded, TikTok Sans Expanded, TikTok Sans ExtraExpanded, Nohemi, Poppins, Raleway, Anton, Comic Cat, Gavency
 Valid positions: top-left, top-center, top-right, center-left, center, center-right, bottom-left, bottom-center, bottom-right
 
 ## Marketing & distribution
@@ -499,11 +520,11 @@ wonda media info <mediaId>
 
 ### X/Twitter
 
-Cookie-based auth against X's internal GraphQL API. Supports reads, writes, and social graph.
+Supports reads, writes, and social graph.
 
 ```bash
-# Auth setup (get cookies from DevTools → Application → Cookies → x.com)
-wonda x auth set --auth-token <auth_token> --ct0 <ct0>
+# Auth setup (run `wonda x auth --help` for details)
+wonda x auth set
 wonda x auth check
 
 # Read
@@ -540,11 +561,11 @@ All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`
 
 ### LinkedIn
 
-Cookie-based auth against LinkedIn's Voyager API. Supports search, profiles, companies, messaging, and engagement.
+Supports search, profiles, companies, messaging, and engagement.
 
 ```bash
-# Auth setup (get cookies from DevTools → Application → Cookies → linkedin.com)
-wonda linkedin auth set --li-at-value <li_at> --jsessionid-value <JSESSIONID>
+# Auth setup (run `wonda linkedin auth --help` for details)
+wonda linkedin auth set
 wonda linkedin auth check
 
 # Read
@@ -577,11 +598,11 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 
 ### Reddit
 
-Cookie-based auth (optional — many reads work unauthenticated). Supports search, feeds, users, posts, trending, and chat/DMs.
+Auth is optional — many reads work unauthenticated. Supports search, feeds, users, posts, trending, and chat/DMs.
 
 ```bash
-# Auth setup (get cookie from DevTools → Application → Cookies → reddit.com → reddit_session)
-wonda reddit auth set --session-value <jwt>
+# Auth setup (run `wonda reddit auth --help` for details)
+wonda reddit auth set
 wonda reddit auth check
 
 # Read (works without auth)
@@ -612,11 +633,11 @@ Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pa
 
 ### Reddit chat / DMs
 
-Direct messaging via the Matrix protocol. Requires a separate chat token (different from the session cookie).
+Direct messaging via the Matrix protocol. Requires a separate chat token.
 
 ```bash
-# Auth setup (get token from DevTools → Console → JSON.parse(localStorage.getItem('chat:access-token')).token)
-wonda reddit chat auth-set --token <matrix-token>
+# Auth setup (run `wonda reddit chat auth-set --help` for details)
+wonda reddit chat auth-set
 
 # Read
 wonda reddit chat inbox                                  # List DM conversations with latest messages
@@ -658,7 +679,7 @@ wonda analyze video --media $VIDEO_MEDIA --wait -o /tmp/grid.jpg
 wonda analyze video --media $VIDEO_MEDIA --wait --jq '.outputs[] | select(.outputKey=="transcript") | .outputValue'
 ```
 
-**Error handling**: 402 = insufficient credits (use `wonda topup`), 409 = media still processing (CLI auto-retries).
+**Error handling**: 402 = insufficient credits, 409 = media still processing (CLI auto-retries).
 
 ### Chat (AI assistant)
 
@@ -697,7 +718,7 @@ wonda capabilities                                    # Full platform capabiliti
 wonda pricing list                                    # Pricing for all models
 wonda pricing estimate --model seedance-2 --prompt "..." # Cost estimate
 wonda style list                                      # Available visual styles
-wonda topup --amount 20                               # Top up credits ($5 minimum, opens Stripe)
+wonda topup                                            # Top up credits (opens Stripe checkout)
 ```
 
 ### Editing audio & images
@@ -706,9 +727,15 @@ wonda topup --amount 20                               # Top up credits ($5 minim
 # Edit audio
 wonda edit audio --operation <op> --media <id> --wait -o out.mp3
 
-# Edit image (crop, etc.)
+# Edit image (crop, text overlay)
 wonda edit image --operation imageCrop --media <id> \
   --params '{"aspectRatio":"9:16"}' --wait -o cropped.png
+
+# Add text to an image (outputs image, same format as input)
+wonda edit image --operation textOverlay --media <id> \
+  --prompt-text "Your text here" \
+  --params '{"fontFamily":"TikTok Sans","position":"bottom-center","fontSizeScale":1.5,"textColor":"#FFFFFF","strokeWidth":2}' \
+  --wait -o output.png
 ```
 
 ### Alignment (timestamp extraction)
@@ -753,8 +780,8 @@ wonda alignment extract-timestamps --model <model> --attach <mediaId> --wait
 ## Error recovery
 
 - **Unknown model**: `wonda models list`
-- **No API key**: `export WONDERCAT_API_KEY=sk_...` or `wonda config set api-key sk_...`
+- **No API key**: `wonda auth login` or set `WONDERCAT_API_KEY` env var
 - **Job failed**: `wonda jobs get inference <id>` for error details
 - **Bad params**: `wonda models info <slug>` for valid params
 - **Timeout**: `wonda jobs wait inference <id> --timeout 20m`
-- **Insufficient credits (402)**: `wonda topup --amount 10` to add credits via Stripe
+- **Insufficient credits (402)**: `wonda topup` to add credits
