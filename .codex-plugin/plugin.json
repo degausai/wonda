@@ -18,5 +18,15 @@
     "cli",
     "content-creation"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Wonda",
+    "shortDescription": "AI marketing automation from the terminal",
+    "longDescription": "Generate images, videos, music, and speech with 20+ AI models. Edit with CapCut-style captions, transitions, and effects. Publish directly to Instagram, TikTok, LinkedIn, X, and Reddit. Research competitors at scale. All from a single CLI that AI agents operate natively.",
+    "developerName": "Wonda",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://wonda.sh",
+    "privacyPolicyURL": "https://wonda.sh/privacy"
+  }
 }
