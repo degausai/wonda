@@ -226,7 +226,7 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 
 - Quality complaint or different style → `sora2` or `sora2pro`
 - Max single-clip duration is **15s** for Seedance 2, **20s** for Sora → for longer content, stitch multiple clips via merge
-- Fast generation needed → `veo3_1-fast` (Veo 3.1, supports 720p/1080p)
+- Veo (`veo3_1`, `veo3_1-fast`) is available but NOT in the default waterfall. Only pick Veo when the user explicitly asks for Veo by name.
 
 **Image-to-video routing (MANDATORY when attaching a reference image):**
 
@@ -245,7 +245,7 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 
 - `grok-imagine-video` — xAI video generation, 5-15s, supports 7 aspect ratios including 4:3 and 3:2
 - `topaz-video-upscale` — Upscale video resolution (1-4x factor, supports fps conversion)
-- `sync-lipsync-v2-pro` — Sync lip movements to audio (requires video + audio input)
+- `sync-lipsync-v2-pro` — Legacy lipsync for user-supplied video + audio pairs. Inferior to native-audio generation and almost never the right choice for new content. See the "Lip sync" section for rules.
 
 Seedance family (DEFAULT video model, watermarks automatically removed):
 
@@ -258,9 +258,11 @@ Seedance family (DEFAULT video model, watermarks automatically removed):
 ### Audio
 
 - Music: `suno-music` (set `--params '{"instrumental":true}'` for no vocals)
-- Text-to-speech: `elevenlabs-tts` — always set voiceId in params. Default female voice: `--params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}'` (Rachel).
+- Text-to-speech: `elevenlabs-tts` — only for explicit narrator/voice-over asks over silent footage. Do NOT use to "make a UGC character talk" — Sora / Sora 2 Pro / Veo 3.1 / Kling 3 / Seedance 2 generate native synced speech in any language, which looks and sounds far better. Always set voiceId in params. Default female voice: `--params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}'` (Rachel).
 - Transcription: `elevenlabs-stt`
 - Multi-speaker dialogue: `elevenlabs-dialogue`
+
+**Native synced speech (preferred over TTS + lipsync):** Sora, Sora 2 Pro, Veo 3.1, Kling 3, and Seedance 2 all generate dialogue in any language directly inside the video, with mouth movements baked in. Put the line (and language) in the video model's `--prompt`. Never chain `elevenlabs-tts` → `sync-lipsync-v2-pro` to fake speech over a silent generation.
 
 ## Prompt writing rules
 
@@ -324,7 +326,7 @@ wonda edit video --operation editAudio --media $VID_MEDIA --audio-media $TTS_MED
   --params '{"videoVolume":0,"audioVolume":100}' --wait -o with-voice.mp4
 ```
 
-Only use this when you need to REPLACE the video's audio. Sora generates native speech audio — don't replace it unless the user specifically wants a different voiceover.
+Only use this when you need to REPLACE the video's audio. Sora, Sora 2 Pro, Veo 3.1, Kling 3, and Seedance 2 all generate native synced speech in any language — don't replace it with TTS unless the user explicitly asks for a different voiceover. Never reach for this step to "add speech" to a UGC/talking-head clip; put the dialogue in the video model's prompt instead.
 
 ### Add static text overlay
 
@@ -441,7 +443,11 @@ wonda generate video --model bria-video-background-removal --attach $VIDEO_MEDIA
 
 CRITICAL: Image and video background removal are different models. Never swap them.
 
-### Lip sync
+### Lip sync (last-resort fallback — prefer native-audio video models)
+
+Sora, Sora 2 Pro, Veo 3.1, Kling 3, and Seedance 2 all generate speech in any language with correctly synced mouth movements as part of the video itself. That path produces dramatically better results than `sync-lipsync-v2-pro`: better lip physics, better lighting, better costs, and no second inference round-trip. For any talking UGC, ad, or spokesperson video, put the dialogue directly in the video model's prompt — do not chain TTS + lipsync.
+
+Only reach for `sync-lipsync-v2-pro` when the user EXPLICITLY supplies both a pre-existing video and a pre-existing audio clip and asks you to align the mouth to that audio. If a user asks for lipsync as the default method of making a character speak, push back: the native-audio video models are the better tool and work in any language.
 
 ```bash
 wonda generate video --model sync-lipsync-v2-pro --attach $VIDEO_MEDIA,$AUDIO_MEDIA --wait -o synced.mp4
