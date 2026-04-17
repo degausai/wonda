@@ -36,6 +36,32 @@ Not all commands are available to every account type:
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
+### Social signups (Instagram, TikTok, etc.)
+
+Drive them with the `wonda device` primitives + a throwaway mailbox from `wonda email`. The screenshot → decide → tap/type/swipe loop is how these flows work — there's no shortcut command, and that's fine: social apps change their UI constantly and any canned flow would drift faster than you could maintain it.
+
+Standard loop:
+
+1. `wonda email account create --random` → save `{email, password}`.
+2. `wonda device create` → pick a `ready` device (poll `wonda device get <id> --fields status`).
+3. `wonda device launch <device-id> com.instagram.android` (or `com.zhiliaoapp.musically` for TikTok). Fall back to `wonda device open-url` if you'd rather start in the web flow.
+4. Loop: `wonda device screenshot <device-id> > s.json` → decode the base64 PNG → read → pick an action → `tap | type | swipe | key` → screenshot again. Use `--text "SomeButtonLabel"` on `tap` before guessing coordinates; fall back to `--x --y` read off the screenshot for elements without matching text (number pickers, date spinners, etc.).
+5. When the app sends a verification email, `wonda email inbox wait <email> --timeout 120` — returns `{codes: ["483921"], links: [...]}` with the 6-digit code already extracted. `wonda device type <device-id> --text "<code>"` to feed it back.
+6. For number/date spinners: tap on the highlighted cell, Android pops up a numeric or alphabetic keyboard, `wonda device type --text "<value>"` replaces the selected text. `wonda device key --code 4` dismisses the keyboard when done.
+
+**Consent-like taps** — anything that accepts Terms/Privacy/Cookies, grants permissions, or publishes something — stop and ask the user for explicit confirmation in chat before tapping. That isn't about signups specifically; it applies to any automation step.
+
+**Rate-limit signals** — if the app shows you a visual puzzle ("we want to make sure you're a real person"), stop and hand off to the user with `wonda device stream <id>` (see next section). Don't click through puzzles yourself.
+
+### Handing off to a human
+
+If automation hits a screen that requires a human to take over (consent flow you shouldn't auto-accept, ambiguous UI, step where the user prefers to act themselves), use `wonda device stream <device-id>` — returns a `playerUrl` signed with a short-lived JWT (1h). Give that URL to the user, they act in their own browser, and automation can resume afterward.
+
+```bash
+wonda device stream <device-id>
+# → { "streamUrl": "wss://…", "playerUrl": "https://…", "deviceType": "social" }
+```
+
 ### Global output flags
 
 All commands support these output control flags:
