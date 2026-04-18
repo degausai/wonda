@@ -1,0 +1,44 @@
+{
+  "name": "@degausai/wonda-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the Wonda content creation API — images, video, music, audio, editing, and publishing",
+  "type": "module",
+  "bin": {
+    "wonda-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.8.0"
+  },
+  "keywords": [
+    "mcp",
+    "wonda",
+    "video",
+    "image",
+    "audio",
+    "content-creation",
+    "ai-agent"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/degausai/wonda"
+  },
+  "homepage": "https://wonda.sh",
+  "author": "Wonda <support@wondercat.ai>"
+}
