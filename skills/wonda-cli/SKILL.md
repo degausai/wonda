@@ -112,25 +112,26 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                         | Description                                                                  | Input                       |
-| ---------------------------- | ---------------------------------------------------------------------------- | --------------------------- |
-| product-video                | Product/scene video — prompt library for all categories                      | optional product image      |
-| ugc-talking                  | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll           | optional reference          |
-| ugc-reaction-batch           | Batch TikTok-native UGC reactions with viral strategy                        | optional product image      |
-| tiktok-ugc-pipeline          | Scrape viral reel → generate 5 UGC → post as drafts                          | reel or TikTok URL          |
-| ugc-dance-motion             | Dance/motion transfer                                                        | image + video               |
-| marketing-brain              | Marketing strategy brain — hooks, visuals, ads                               | user brief                  |
-| reddit-subreddit-intel       | Scrape top posts, analyze virality, generate ideas                           | subreddit + product         |
-| twitter-influencer-search    | Find X influencers and amplifiers                                            | competitor/niche keywords   |
-| tiktok-slideshow-carousel    | 3-slide TikTok carousel — hook, bridge, product reveal                       | app screenshot + audience   |
-| ffmpeg-local-video-finishing | Local ffmpeg finishing for deterministic trims, muxes, reverses, and exports | local video path or mediaId |
-| ffmpeg-burn-captions         | Burn captions locally with ffmpeg after getting transcript/timing            | local video path or mediaId |
-| ffmpeg-social-formatting     | Reformat local video for 9:16, 1:1, 16:9, and social-safe exports            | local video path or mediaId |
-| ffmpeg-scene-splitting       | Detect scene boundaries locally, split into clips, or omit one scene         | local video path or mediaId |
-| ffmpeg-silence-cut           | Detect and collapse dead air locally while preserving short natural pauses   | local video path or mediaId |
-| ffmpeg-frame-extraction      | Extract single frames, poster frames, or evenly spaced stills locally        | local video path or mediaId |
-| ffmpeg-analysis-artifacts    | Build local analysis artifacts: grid, first/last frame, and extracted audio  | local video path or mediaId |
-| ffmpeg-reference             | Compact ffmpeg routing, font, codec, and command reference for agents        | local media path            |
+| Slug                         | Description                                                                  | Input                         |
+| ---------------------------- | ---------------------------------------------------------------------------- | ----------------------------- |
+| product-video                | Product/scene video — prompt library for all categories                      | optional product image        |
+| ugc-talking                  | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll           | optional reference            |
+| ugc-reaction-batch           | Batch TikTok-native UGC reactions with viral strategy                        | optional product image        |
+| tiktok-ugc-pipeline          | Scrape viral reel → generate 5 UGC → post as drafts                          | reel or TikTok URL            |
+| ugc-dance-motion             | Dance/motion transfer                                                        | image + video                 |
+| marketing-brain              | Marketing strategy brain — hooks, visuals, ads                               | user brief                    |
+| reddit-subreddit-intel       | Scrape top posts, analyze virality, generate ideas                           | subreddit + product           |
+| twitter-influencer-search    | Find X influencers and amplifiers                                            | competitor/niche keywords     |
+| tiktok-slideshow-carousel    | 3-slide TikTok carousel — hook, bridge, product reveal                       | app screenshot + audience     |
+| ffmpeg-local-video-finishing | Local ffmpeg finishing for deterministic trims, muxes, reverses, and exports | local video path or mediaId   |
+| ffmpeg-burn-captions         | Burn captions locally with ffmpeg after getting transcript/timing            | local video path or mediaId   |
+| ffmpeg-social-formatting     | Reformat local video for 9:16, 1:1, 16:9, and social-safe exports            | local video path or mediaId   |
+| ffmpeg-scene-splitting       | Detect scene boundaries locally, split into clips, or omit one scene         | local video path or mediaId   |
+| ffmpeg-silence-cut           | Detect and collapse dead air locally while preserving short natural pauses   | local video path or mediaId   |
+| ffmpeg-frame-extraction      | Extract single frames, poster frames, or evenly spaced stills locally        | local video path or mediaId   |
+| ffmpeg-analysis-artifacts    | Build local analysis artifacts: grid, first/last frame, and extracted audio  | local video path or mediaId   |
+| ffmpeg-reference             | Compact ffmpeg routing, font, codec, and command reference for agents        | local media path              |
+| remotion-local-render        | Render editorPipeline blueprint steps locally via @remotion/renderer         | manifest JSON + editor job id |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -163,6 +164,7 @@ Font rule for local caption/text work:
 - Prefer an explicit font file path over a family name.
 - Never assume a font exists. Check first with `fc-match`, `fc-list`, `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`, or `/usr/share/fonts`.
 - If the task is mainly local finishing/captions/formatting/splitting/artifact extraction, check the ffmpeg-specific skills before inventing commands.
+- `wonda edit video` renders locally by default for single-video ops (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). The server returns a manifest; the CLI runs `@remotion/renderer` against a CloudFront-hosted bundle, uploads the output, and finalizes the editor_job. No flag needed. Pass `--render-server` only to force Lambda. Multi-video ops (`overlay`, `splitScreen`, `merge`, `splitScenes`, `motionDesign`) auto-reject with a 400 — the CLI will tell you to use `--render-server`. See the `remotion-local-render` content skill for the full recipe (including the STT-free TikTok-style caption flow via `wonda alignment extract-timestamps` → `--caption-segments`).
 
 Default local export target unless the user asked otherwise:
 
@@ -204,6 +206,20 @@ wonda audio dialogue --model elevenlabs-dialogue --prompt "Speaker A: Hi! Speake
   --wait -o dialogue.mp3
 ```
 
+**Audio AI operations (direct-inference, NOT editor ops):**
+
+```bash
+# Denoise / dereverberate speech
+wonda audio enhance --model replicate-resemble-enhance --attach $MEDIA \
+  --params '{"denoise":true,"chunkSeconds":10}' --wait -o enhanced.wav
+
+# Split a track into voice and instrumental stems
+wonda audio extract-voice --model replicate-demucs --attach $MEDIA \
+  --wait -o vocals.wav
+```
+
+DO NOT use `wonda edit video --operation enhanceAudio` or `--operation voiceExtractor` — those paths are deprecated. They still work but emit a warning, and they route through the heavier editor_job pipeline for no functional reason.
+
 **Add animated captions to a video:**
 
 The `animatedCaptions` operation handles everything in one step — it extracts audio, transcribes for word-level timing, and renders animated word-by-word captions onto the video.
@@ -232,10 +248,15 @@ wonda transitions run --media $VID --preset flash_glow --wait -o out.mp4
 # Or build a custom pipeline of steps:
 wonda transitions run --media $VID \
   --steps '[{"glow":{"spread":8}},{"scene_flash":{}}]' --wait -o out.mp4
+# Or send an agent-generated timeline of clips (inline JSON):
+wonda transitions run --media $VID \
+  --clips '[{"layer_type":"video","start_frame":0,"end_frame":60}]' --wait -o out.mp4
+# …or from a file (handy for long agent timelines):
+wonda transitions run --media $VID --clips ./timeline.json --wait -o out.mp4
 wonda transitions job <jobId>                        # Poll a transition job
 ```
 
-Use `--preset` OR `--steps` (not both). Requires a full (logged-in) account. **Always read `wonda transitions llms` first when composing a custom pipeline** — it documents the detect→segment→effect dependencies and which ops need masks.
+Use exactly one of `--preset`, `--steps`, or `--clips`. Requires a full (logged-in) account. **Always read `wonda transitions llms` first when composing a custom pipeline or a clips timeline** — it documents the detect→segment→effect dependencies, which ops need masks, and the full clip-spec shape (layer types, tracks, effects, transforms).
 
 **Preset variables (`variables` block).** Each preset declares the template variables it accepts under `variables` in `wonda transitions presets`. Each entry has `name`, `description`, and `required`. Required variables MUST be supplied or the job is rejected with a 400 — no more silent skipping. Pass them with `--var name=value` (repeatable) or, for the common `prompt` case, the `--prompt` shortcut:
 
@@ -311,6 +332,8 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 - `kling_2_6_motion_control` — Motion transfer: requires both a reference image AND a reference video, recreates the video's motion with the image's appearance
 - `kling2_5-pro` — Budget Kling option, 5-10s, supports first/last frame images
 
+**Kling prompt rules (important):** Kling's prompt field caps at **2,500 characters** and Kling responds poorly to Sora-style structured briefs (`SCENE:` / `SUBJECT:` / `MOTION:` / `BANNED LOOK:` section headers). In that format Kling latches onto atmosphere nouns and silently drops the central subject (verified empirically: the same 2,842-char Sora-style prompt that rendered correctly on Sora 2 Pro and Seedance 2 produced no phone at all on Kling — even when trimmed to 2,250 chars). When escalating Seedance → Kling, or targeting Kling directly, **rewrite the prompt as short natural-language prose (~1,000–1,500 chars)** and **lead with the hero subject in the opening sentence** rather than burying it inside a `SUBJECT:` block. Do NOT pass a Sora-formatted prompt through to Kling unchanged.
+
 **Other video models:**
 
 - `grok-imagine-video` — xAI video generation, 5-15s, supports 7 aspect ratios including 4:3 and 3:2
@@ -331,6 +354,8 @@ Seedance family (DEFAULT video model, watermarks automatically removed):
 - Text-to-speech: `elevenlabs-tts` — only for explicit narrator/voice-over asks over silent footage. Do NOT use to "make a UGC character talk" — Sora / Sora 2 Pro / Veo 3.1 / Kling 3 / Seedance 2 generate native synced speech in any language, which looks and sounds far better. Always set voiceId in params. Default female voice: `--params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}'` (Rachel).
 - Transcription: `elevenlabs-stt`
 - Multi-speaker dialogue: `elevenlabs-dialogue`
+- Enhance audio (clean up noisy speech): `replicate-resemble-enhance` via `wonda audio enhance` — denoise + dereverberate. Use when a voice recording sounds muffled, echoey, or has background noise. NOT a general "sounds better" button; if the source is already clean this can soften it.
+- Extract voice (isolate vocals / split stems): `replicate-demucs` via `wonda audio extract-voice` — splits into voice and instrumental tracks. Use to pull a speaker or singer off a track, or to isolate the music behind a vocal.
 
 **Native synced speech (preferred over TTS + lipsync):** Sora, Sora 2 Pro, Veo 3.1, Kling 3, and Seedance 2 all generate dialogue in any language directly inside the video, with mouth movements baked in. Put the line (and language) in the video model's `--prompt`. Never chain `elevenlabs-tts` → `sync-lipsync-v2-pro` to fake speech over a silent generation.
 
