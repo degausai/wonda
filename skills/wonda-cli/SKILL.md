@@ -158,7 +158,9 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 | reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                    | subreddit + product           |
 | twitter-influencer-search | Find X influencers and amplifiers                                                                                                     | competitor/niche keywords     |
 | tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                | app screenshot + audience     |
+| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                             | product + optional image      |
 | ffmpeg                    | All local ffmpeg recipes — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId   |
+| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                     | image mediaId or local path   |
 | remotion-local-render     | Render editorPipeline blueprint steps locally via @remotion/renderer                                                                  | manifest JSON + editor job id |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
@@ -321,19 +323,19 @@ wonda transitions run --media $VID --preset flash_glow \
 
 ### Image
 
-Default: `gpt-image-2`. OpenAI's flagship — strongest prompt adherence, best text-in-image, high-fidelity edits via reference images. Quality tiers: `auto` (default), `low`, `medium`, `high` — pass via `--params '{"quality":"high"}'`.
+Default: `gpt-image-2`. OpenAI's flagship — strongest prompt adherence, best text-in-image, high-fidelity edits via reference images. Handles 1-4 reference images. Quality tiers: `auto` (default), `low`, `medium`, `high` — pass via `--params '{"quality":"high"}'`. Caps at 1536px output.
 
-`nano-banana-2` (Google Gemini 3.1 Flash Image) is an equally strong peer alternative — excellent character consistency, multi-reference support up to 14 images, supports 1K/2K/4K, lower latency. Pick it when the user prefers Gemini, when the workflow needs many reference images, or when generation speed matters more than gpt-image-2's text-rendering edge.
+For img2img editing specifically (change, add/remove, restyle, bg-remove, crop, text overlay, vectorize), use `wonda skill get image-edit` — it has the full edit-specific decision tree.
 
-Use other models only when:
+Pick something else only when one of these applies:
 
-- User explicitly asks for a different model
+- User explicitly requests another model
+- **More than 4 reference images** → `nano-banana-2` (gpt-image-2 caps at 4 refs; nano-banana-2 accepts up to 14). For 1-4 refs, stay on `gpt-image-2`.
 - Need vector output → `runware-vectorize`
 - Need background removal → `birefnet-bg-removal`
 - Cheapest possible / fastest drafts → `z-image`
 - Need >1536px / true 4K output → `nano-banana-pro` (1K/2K/4K) or `nano-banana-2` (1K/2K/4K). gpt-image-2 caps at 1536px.
-- gpt-image-2 unavailable / OpenAI down → `nano-banana-2` or `seedream-4-5`
-- Photorealistic/creative imagery → `grok-imagine` or `grok-imagine-pro`
+- gpt-image-2 unavailable / OpenAI down → `nano-banana-2` or `seedream-4-5` or `grok-imagine-pro`
 - Spicy content → `cookie` (SDXL-based, tag-based or natural language prompts) — **ONLY select when the user explicitly asks for spicy content. Never auto-select.**
 
 **Cookie model (`cookie`):** SDXL with DMD acceleration and hires fix. **Restricted: only use when the user explicitly requests spicy content.** Accepts both danbooru-style tags (`1cat, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
@@ -572,26 +574,15 @@ wonda edit video --operation splitScenes --media $VID_MEDIA \
 
 Use omit mode for "remove frozen first frame" (common with Sora videos). Use split mode for "keep just scene X".
 
-### Image editing (img2img)
+### Image editing
+
+Any image edit — img2img, background removal, crop, text overlay, vectorize — has its own skill with the full decision tree, aspect-ratio rules, and model waterfall for edits:
 
 ```bash
-MEDIA=$(wonda media upload ./photo.jpg --quiet)
-wonda generate image --model gpt-image-2 --prompt "change the background to blue" \
-  --attach $MEDIA --aspect-ratio auto --wait -o edited.png
+wonda skill get image-edit
 ```
 
-When editing an existing image, always use `--aspect-ratio auto` to preserve dimensions. The prompt should describe ONLY the edit, not the full image.
-
-### Background removal
-
-```bash
-# Image → use birefnet-bg-removal
-wonda generate image --model birefnet-bg-removal --attach $IMAGE_MEDIA --wait -o no-bg.png
-# Video → use bria-video-background-removal
-wonda generate video --model bria-video-background-removal --attach $VIDEO_MEDIA --wait -o no-bg.mp4
-```
-
-CRITICAL: Image and video background removal are different models. Never swap them.
+One gotcha worth keeping here: image and video background removal use **different** models (`birefnet-bg-removal` vs `bria-video-background-removal`). Never swap them.
 
 ### Lip sync (last-resort fallback — prefer native-audio video models)
 
@@ -892,17 +883,9 @@ wonda topup                                            # Top up credits (opens S
 ```bash
 # Edit audio
 wonda edit audio --operation <op> --media <id> --wait -o out.mp3
-
-# Edit image (crop, text overlay)
-wonda edit image --operation imageCrop --media <id> \
-  --params '{"aspectRatio":"9:16"}' --wait -o cropped.png
-
-# Add text to an image (outputs image, same format as input)
-wonda edit image --operation textOverlay --media <id> \
-  --prompt-text "Your text here" \
-  --params '{"fontFamily":"TikTok Sans","position":"bottom-center","fontSizeScale":1.5,"textColor":"#FFFFFF","strokeWidth":2}' \
-  --wait -o output.png
 ```
+
+For any image edit (crop, text overlay, img2img, background removal, vectorize) pull the dedicated skill: `wonda skill get image-edit`.
 
 ### Alignment (timestamp extraction)
 
