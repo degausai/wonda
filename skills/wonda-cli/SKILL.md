@@ -172,7 +172,7 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 Not every media task should go back through Wonda editing. Use this routing rule:
 
 - Use `wonda` for AI generation, AI transcription/alignment, scraping, publishing, hosted transitions, and workflows that need media IDs or remote jobs.
-- Use local `ffmpeg` for deterministic transforms on files you already have or can download: trim, crop/scale/pad, concat, replace audio, extract audio/frame, reverse, normalize for delivery, burn captions, split scenes, cut silence, and build analysis artifacts.
+- Use local `ffmpeg` for deterministic transforms on files you already have or can download: trim, crop/scale/pad, concat (merging multiple clips), replace audio, extract audio/frame, reverse, normalize for delivery, burn captions, split scenes, cut silence, and build analysis artifacts. **Always merge clips locally** — server-side merge can hang for 30+ minutes once any input exceeds ~7MB.
 
 When a task starts from a Wonda media ID but the actual edit is deterministic, move it to local files first:
 
@@ -194,7 +194,7 @@ Font rule for local caption/text work:
 - Prefer an explicit font file path over a family name.
 - Never assume a font exists. Check first with `fc-match`, `fc-list`, `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`, or `/usr/share/fonts`.
 - If the task is mainly local finishing/captions/formatting/splitting/artifact extraction, check the `ffmpeg` skill before inventing commands.
-- `wonda edit video` renders locally by default for single-video ops (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). The server returns a manifest; the CLI runs `@remotion/renderer` against a CloudFront-hosted bundle, uploads the output, and finalizes the editor_job. No flag needed. Pass `--render-server` only to force Lambda. Multi-video ops (`overlay`, `splitScreen`, `merge`, `splitScenes`, `motionDesign`) auto-reject with a 400 — the CLI will tell you to use `--render-server`. See the `remotion-local-render` content skill for the full recipe (including the STT-free TikTok-style caption flow via `wonda alignment extract-timestamps` → `--caption-segments`).
+- `wonda edit video` renders locally by default for single-video ops (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). The server returns a manifest; the CLI runs `@remotion/renderer` against a CloudFront-hosted bundle, uploads the output, and finalizes the editor_job. No flag needed. Pass `--render-server` only to force Lambda. Multi-video ops (`overlay`, `splitScreen`, `splitScenes`, `motionDesign`) auto-reject with a 400 — the CLI will tell you to use `--render-server`. **`merge` is also rejected locally, but do NOT fall back to `--render-server` — use the local `ffmpeg -f concat` recipe in the `ffmpeg` skill** (server merge can hang for 30+ minutes on inputs >~7MB). See the `remotion-local-render` content skill for the full Remotion recipe (including the STT-free TikTok-style caption flow via `wonda alignment extract-timestamps` → `--caption-segments`).
 
 Default local export target unless the user asked otherwise:
 
@@ -548,11 +548,30 @@ wonda edit video --operation textOverlay --media $STEP2_MEDIA \
 
 ### Merge multiple clips
 
+**Always merge locally with ffmpeg.** Server-side merge (`wonda edit video --operation merge`) can hang for 30+ minutes once any input exceeds ~7MB.
+
+Download every Wonda media ID, then concat. Stream-copy is fast but requires matching codec/profile/resolution; fall back to re-encode if it errors:
+
 ```bash
-wonda edit video --operation merge --media $CLIP1,$CLIP2,$CLIP3 --wait -o merged.mp4
+wonda media download $CLIP1 -o /tmp/clip-1.mp4
+wonda media download $CLIP2 -o /tmp/clip-2.mp4
+wonda media download $CLIP3 -o /tmp/clip-3.mp4
+cat > /tmp/concat.txt <<EOF
+file '/tmp/clip-1.mp4'
+file '/tmp/clip-2.mp4'
+file '/tmp/clip-3.mp4'
+EOF
+ffmpeg -y -f concat -safe 0 -i /tmp/concat.txt -c copy /tmp/merged.mp4
+# If stream-copy fails, re-encode:
+# ffmpeg -y -f concat -safe 0 -i /tmp/concat.txt \
+#   -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart \
+#   -c:a aac -b:a 192k /tmp/merged.mp4
+
+# Re-upload only if a downstream wonda step needs the mediaId.
+MERGED_MEDIA=$(wonda media upload /tmp/merged.mp4 --quiet)
 ```
 
-Media order = playback order. Up to 5 clips.
+File order in `concat.txt` = playback order. See the `ffmpeg` skill for the full concat reference.
 
 ### Split scenes / keep a specific scene
 
