@@ -33,6 +33,7 @@ Not all commands are available to every account type:
 | **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics |
 | **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                             |
 | **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                    |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.          |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
@@ -627,6 +628,90 @@ wonda generate video --model topaz-video-upscale --attach $VIDEO_MEDIA \
   --params '{"upscaleFactor":2}' --wait -o upscaled.mp4
 ```
 
+### Clipping (longform → vertical shorts)
+
+`wonda clipping` takes a long video (podcast, interview, talking-head)
+and produces short vertical clips. Selection is LLM-driven and supports
+a natural-language `--brief` so you can ask for specific moments instead
+of generic virality.
+
+V1 renders 9:16 with **face-tracked reframe** (LR-ASD active-speaker
+detection + One-Euro stabilizer, default) and the existing
+`animatedCaptions` op + a top-third hook overlay per clip. Pass
+`--reframe blur-fill` to keep the full landscape source inside a
+vertical canvas with a blurred background instead.
+
+Async: `POST /api/v1/clipping` returns a `clippingJobId`; the CLI polls
+`GET /api/v1/clipping/jobs/{id}` under `--wait`. Pass `--output <dir>`
+and the CLI downloads each rendered clip + a `plan.json`.
+
+Auth: requires the `clippingEnabled` PostHog feature flag in prod; local
+dev bypasses automatically.
+
+```bash
+# Plan only — fast, no render
+wonda clipping --media $MEDIA --brief "the most controversial moments" --dry-run --wait
+
+# Full pipeline: select + render + download
+wonda clipping --media $MEDIA \
+  --brief "the most controversial moments" \
+  --caption-preset "TikTok Red Captions" \
+  --hook auto \
+  --wait --output ./clips/
+
+# Filter by speaker (uses ElevenLabs diarization labels)
+wonda clipping --media $MEDIA --speaker SPEAKER_00 --wait --output ./clips/
+
+# Speaker rename for readable rationales
+wonda clipping --media $MEDIA --speaker Joe \
+  --speaker-map '{"SPEAKER_00":"Joe","SPEAKER_01":"Guest"}' --wait --output ./clips/
+
+# Tune count and durations — pick a target length with a tolerance
+wonda clipping --media $MEDIA --brief "punchy one-liners" \
+  --count 5 --duration 20 --tolerance 5 --wait --output ./clips/
+
+# Or specify an explicit min/max range instead (mutually exclusive
+# with --duration/--tolerance)
+wonda clipping --media $MEDIA --brief "punchy one-liners" \
+  --count 5 --min-duration 8 --max-duration 30 --wait --output ./clips/
+
+# Auto-pick FX preset per clip from a catalog
+wonda clipping --media $MEDIA --auto-preset \
+  --preset-catalog '[{"slug":"flash_glow","description":"glow + scene flash"},{"slug":"text_glow","description":"per-word text glow"}]' \
+  --wait --output ./clips/
+```
+
+Job-status shape (returned by GET `/api/v1/clipping/jobs/{id}`):
+
+```json
+{
+  "clippingJobId": "...",
+  "status": "succeeded",
+  "stage": "succeeded",
+  "progress": 1,
+  "plan": {
+    "sourceDurationSec": 1800.5,
+    "speakers": ["SPEAKER_00", "SPEAKER_01"],
+    "clips": [
+      {
+        "start": 12.4,
+        "end": 38.7,
+        "title": "Why he quit the agency",
+        "hookText": "He admits…",
+        "rationale": "Concedes \"the agency model is dead\" then explains why...",
+        "score": 87,
+        "dominantSpeaker": "SPEAKER_00",
+        "reframeMode": "blur-fill",
+        "preset": null,
+        "mediaId": "uuid-of-rendered-clip",
+        "url": "https://storage.googleapis.com/.../clip.mp4"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
 ## Editor operations reference
 
 | Operation          | Inputs                      | Key Params                                                                    |
@@ -678,9 +763,12 @@ SCRAPE=$(wonda scrape video --url "https://www.instagram.com/reel/ABC123/" --wai
 wonda publish instagram --media <id> --account <accountId> --caption "New drop"
 wonda publish instagram --media <id> --account <accountId> --caption "..." --alt-text "..." --product IMAGE --share-to-feed
 wonda publish instagram-carousel --media <id1>,<id2>,<id3> --account <accountId> --caption "..."
-wonda publish tiktok --media <id> --account <accountId> --caption "New drop"
-wonda publish tiktok --media <id> --account <accountId> --caption "..." --privacy-level PUBLIC_TO_EVERYONE --aigc
-wonda publish tiktok-carousel --media <id1>,<id2> --account <accountId> --caption "..." --cover-index 0
+wonda tiktok creator-info --account <accountId>      # Live privacy options + comment/duet/stitch defaults
+wonda publish tiktok --media <id> --account <accountId> --caption "New drop" --privacy PUBLIC_TO_EVERYONE
+wonda publish tiktok --media <id> --account <accountId> --caption "..." --privacy PUBLIC_TO_EVERYONE \
+  --disable-comment --commercial-disclose --brand-organic
+wonda publish tiktok-carousel --media <id1>,<id2> --account <accountId> --caption "..." \
+  --privacy PUBLIC_TO_EVERYONE --cover-index 0
 
 # History
 wonda publish history instagram --limit 10
