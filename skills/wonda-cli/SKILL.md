@@ -54,6 +54,43 @@ Standard loop:
 
 **Rate-limit signals** — if the app shows you a visual puzzle ("we want to make sure you're a real person"), stop and hand off to the user with `wonda device stream <id>` (see next section). Don't click through puzzles yourself.
 
+### Voice cloning
+
+Clone a voice from a 10s+ audio clip and use it in TTS. Hard limit: 20 cloned voices per account. Cost: $1.50 per clone.
+
+```bash
+# Clone from a local file (auto-uploads to media library first)
+wonda voice create "Andu" --file ./sample.mp3 --description "My voice"
+
+# Clone from existing wonda media
+wonda voice create "Brand" --media-id <uuid>
+
+# Optional source-audio preprocessing
+wonda voice create "Clean" --file ./raw.wav --noise-reduction --normalize-volume
+
+# List cloned voices (each row reports isExpired and expiresInDays)
+wonda voice list
+
+# One voice
+wonda voice get <voice-id>
+
+# Rename / re-describe (local only, no provider call)
+wonda voice update <voice-id> --name "New Name" --description "..."
+
+# Delete
+wonda voice delete <voice-id>
+```
+
+**Use a cloned voice in TTS** by passing the `providerVoiceId` from `voice get` as `voiceId` to `/audio/speech`:
+
+```bash
+wonda audio speech "Hello world" \
+  --model minimax-speech-2-8-hd \
+  --params '{"voiceId":"<providerVoiceId>"}'
+```
+
+**7-day expiry**: cloned voices that haven't been used in TTS within 7 days are automatically expired. Running TTS with a cloned voice automatically refreshes its expiry. Idle voices that lapse must be re-cloned ($1.50 again).
+
 ### Credentials vault
 
 Persist logins created on external platforms (Instagram, TikTok, Twitter, etc.) so they can be reused on the next run. Passwords are AES-256-GCM encrypted with a server-side key and only decrypted on `get`.
