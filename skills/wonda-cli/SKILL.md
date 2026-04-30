@@ -441,6 +441,31 @@ Seedance family (DEFAULT video model, watermarks automatically removed):
 
 **Native synced speech (preferred over TTS + lipsync):** Sora, Sora 2 Pro, Veo 3.1, Kling 3, and Seedance 2 all generate dialogue in any language directly inside the video, with mouth movements baked in. Put the line (and language) in the video model's `--prompt`. Never chain `elevenlabs-tts` → `sync-lipsync-v2-pro` to fake speech over a silent generation.
 
+## Characters
+
+Characters are reusable saved combos (image + optional voice audio) you can mention in Kling prompts with `@name`. The server auto-injects the image as `start_image` and the audio (with its Kling `voice_id`) as `voice_audio` whenever a Kling model is selected. Name rules: must start with a letter, 1–31 chars, alphanumeric + `_`/`-`.
+
+**From a Kling clip** — extract a frame + voice from a generation you like:
+
+```bash
+VID=$(wonda generate video --model kling_3_pro --prompt "young man, grey tshirt, talking to camera" --wait --quiet)
+VID_MEDIA=$(wonda jobs get inference $VID --jq '.outputs[0].media.mediaId')
+wonda character from-media alex --source $VID_MEDIA --frame-ms 2500
+wonda generate video --model kling_3_pro --prompt "@alex welcomes viewers to the channel" --wait -o alex-welcome.mp4
+```
+
+**From scratch** — generate a portrait and a TTS sample, then bind them:
+
+```bash
+IMG=$(wonda generate image --model nano-banana-2 --prompt "young woman, studio portrait" --wait --quiet)
+IMG_MEDIA=$(wonda jobs get inference $IMG --jq '.outputs[0].media.mediaId')
+AUD=$(wonda audio speech --model elevenlabs-tts --prompt "Hi, this is me" --params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}' --wait --quiet)
+AUD_MEDIA=$(wonda jobs get inference $AUD --jq '.outputs[0].media.mediaId')
+wonda character create maya --image $IMG_MEDIA --audio $AUD_MEDIA
+```
+
+List / inspect / update / delete: `wonda character list`, `wonda character get <name>`, `wonda character update <name> --audio $NEW`, `wonda character delete <name>`. Only one character with audio can be referenced per Kling generation.
+
 ## Prompt writing rules
 
 Follow this waterfall top-to-bottom. Use the FIRST matching rule and stop.
@@ -686,6 +711,23 @@ and the CLI downloads each rendered clip + a `plan.json`.
 
 Auth: requires the `clippingEnabled` PostHog feature flag in prod; local
 dev bypasses automatically.
+
+**Source — never pass YouTube URLs to `--url`.** The flag exists on the
+CLI but the underlying `--url` flow shells out to `yt-dlp` on the
+**video-worker container** (Cloud Run / GCP datacenter IP). YouTube
+blocks datacenter IPs with the "Sign in to confirm you're not a bot"
+challenge and the worker has no cookie store, so YouTube ingest fails
+at progress 0.05 with that error and the LLM hold has to be released.
+For YouTube, always download locally and upload first:
+
+```bash
+yt-dlp -o /tmp/source.mp4 \
+  -f "bv*[ext=mp4][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]" \
+  --merge-output-format mp4 "<youtube-url>"
+MEDIA=$(wonda media upload /tmp/source.mp4 --quiet)
+```
+
+`--url` is fine for **direct mp4 URLs** (no JS, no anti-bot cookies).
 
 ```bash
 # Plan only — fast, no render
