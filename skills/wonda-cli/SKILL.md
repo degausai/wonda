@@ -261,17 +261,21 @@ wonda generate music --model suno-music --prompt "upbeat lo-fi" --wait -o music.
 **Audio (speech, transcription, dialogue):**
 
 ```bash
+# List available voices (TTS + dialogue use the same set)
+wonda audio voices
+
 # Text-to-speech
 wonda audio speech --model elevenlabs-tts --prompt "Your script here" \
-  --params '{"voiceId":"21m00Tcm4TlvDq8ikWAM"}' --wait -o speech.mp3
-# elevenlabs-tts always requires a voiceId param
-# Common voice: Rachel (female) "21m00Tcm4TlvDq8ikWAM"
+  --params '{"voiceId":"hpp4J3VqNfWAUOO0d1Us"}' --wait -o speech.mp3
+# elevenlabs-tts always requires a voiceId — pick one from `wonda audio voices`
 
 # Transcribe audio/video to text
 wonda audio transcribe --model elevenlabs-stt --attach $MEDIA --wait
 
-# Multi-speaker dialogue
-wonda audio dialogue --model elevenlabs-dialogue --prompt "Speaker A: Hi! Speaker B: Hello!" \
+# Multi-speaker dialogue (each speaker needs a voiceId from `wonda audio voices`)
+wonda audio dialogue --model elevenlabs-dialogue \
+  --prompt 'ALICE: Hi! BOB: Hello!' \
+  --params '{"speakers":[{"label":"ALICE","voiceId":"hpp4J3VqNfWAUOO0d1Us"},{"label":"BOB","voiceId":"IKne3meq5aSn9XLyUdCD"}]}' \
   --wait -o dialogue.mp3
 ```
 
@@ -319,6 +323,12 @@ wonda transitions run --media $VID \
   --clips '[{"layer_type":"video","start_frame":0,"end_frame":60}]' --wait -o out.mp4
 # Or from a file (handy for long agent timelines):
 wonda transitions run --media $VID --clips ./timeline.json --wait -o out.mp4
+# To attach scene_transitions: pass an envelope (clips + scene_transitions)
+# instead of a bare clip array — same file, both fields forwarded.
+wonda transitions run --media $VID --clips ./timeline_with_transitions.json --wait -o out.mp4
+# where timeline_with_transitions.json is:
+#   { "clips": [...],
+#     "scene_transitions": [{"name":"crossfade","params":{"duration":8},"boundaries":[60]}] }
 wonda transitions job <jobId>                        # Poll a transition job
 ```
 
@@ -346,6 +356,39 @@ wonda transitions run --media $VID --preset border_frame \
 The `prompt` variable is a **detection text query** describing which subject to mask, fed to SAM3 to produce per-frame segmentation masks. Not a content-generation prompt.
 
 Building a custom `--clips` timeline that needs detection masks? Add a clip with `layer_type: "video"` and a `mask: {layer_type: "mask", analysis_steps: [{name: segment, params: {prompt: "..."}}]}`. SAM3 handles both detection and segmentation in one step from the prompt, so no separate `detect` step is needed.
+
+### Pre-warming masks before render (recommended)
+
+For presets with `mask:<label>` variables, run `wonda transitions ensure-masks` first so the render starts with masks already prepared. The first call for a (media, label) pair takes 1-3 minutes; subsequent calls are near-instant.
+
+```bash
+# 1. Ensure masks are prepared for the labels you'll use, blocking until ready.
+wonda transitions ensure-masks --media $VID --labels person,phone --wait
+
+# 2. Run the render. Masks are already prepared.
+wonda transitions run --media $VID --preset slide_reflect_background \
+  --var "masks=mask:person+phone" --wait -o out.mp4
+```
+
+`ensure-masks` flags:
+
+- `--media MEDIA_ID` — required, the video the masks are for
+- `--label NAME` — repeatable, one label per call (`--label person --label phone`)
+- `--labels NAME,NAME` — comma-separated alternative (`--labels person,phone`)
+- `--wait` — block until every label is prepared
+- `--timeout DUR` — cap wait time when `--wait` is set (default 10m)
+
+Multi-prompt syntax: `mask:woman+phone` in `--var` is split into separate masks (`woman`, `phone`) and unioned per-frame. Pass each sub-label separately to `ensure-masks` so all of them are pre-warmed.
+
+When to skip `ensure-masks`:
+
+- Non-mask presets (no `mask:<label>` variables) — nothing to prepare
+- A previous render already used these (media, labels) — already prepared
+
+When `ensure-masks` matters most:
+
+- First render of a new media with mask-based presets
+- Iterating params on a render — pre-warm once, then run as many times as you want without re-preparing
 
 **Multi-scene presets (`requiresMultiScene: true`).** Some presets use scene-aware logic and expect a video with multiple cuts/scenes. Check `requiresMultiScene` in `wonda transitions presets`. If true, feeding a single continuous shot will produce only one scene and the effect may look underwhelming. Combine clips first or use a video with natural cuts.
 
@@ -850,6 +893,15 @@ wonda publish tiktok --media <id> --account <accountId> --caption "..." --privac
   --disable-comment --commercial-disclose --brand-organic
 wonda publish tiktok-carousel --media <id1>,<id2> --account <accountId> --caption "..." \
   --privacy PUBLIC_TO_EVERYONE --cover-index 0
+
+# Schedule a post (Instagram and TikTok single posts)
+wonda publish instagram --media <id> --account <accountId> --caption "..." --scheduled-at 2026-05-01T14:00:00Z
+wonda publish tiktok --media <id> --account <accountId> --caption "..." --scheduled-at 2026-05-01T14:00:00-07:00
+# --scheduled-at takes an RFC3339 timestamp with timezone; 5 min – 29 days out.
+
+# Manage scheduled jobs
+wonda publish scheduled list                  # List pending scheduled posts
+wonda publish scheduled cancel <outputJobId>  # Cancel before it fires
 
 # History
 wonda publish history instagram --limit 10
