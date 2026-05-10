@@ -24,6 +24,31 @@ brew tap degausai/tap && brew install wonda
 - **Auth**: `wonda auth login` (opens browser, recommended) or set `WONDA_API_KEY` env var
 - **Verify**: `wonda auth check`
 
+### Organizations & spend context
+
+Wondercat orgs are shared wallets with their own seats and billing.
+Members can spend from the org wallet (instead of their personal credits)
+by switching context:
+
+- `wonda use --org <slug>` — sticky org context for this machine. Sets
+  `X-Wonda-Org` on every request; holds, charges, and `wonda balance`
+  route through the org wallet.
+- `wonda use --personal` — back to personal.
+
+`wonda topup` always tops up your **personal** wallet, regardless of
+context. Topping up the org wallet (and configuring auto top-up) is
+admin-only and happens on the web at `/organizations/<slug>`. If a
+member runs out of org credits, the error tells them to ask an admin or
+switch back to personal — they cannot top up the org wallet from CLI.
+
+Roles inside an org are separate from the seat plan:
+
+- **Owner**: the original creator. Cannot be demoted or kicked. Can transfer ownership to another member from the org page (rare).
+- **Admin**: can invite (single or bulk via paste), kick, change roles, change seats, top up, configure auto top-up, change monthly limits.
+- **User**: can only spend within the org wallet (subject to a per-member monthly limit if the admin set one).
+
+A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access (skills, etc.) as a personal paid plan, but only while in org context. `wonda use --personal` falls back to the user's personal account plan.
+
 ### Access tiers
 
 Not all commands are available to every account type:
@@ -309,6 +334,36 @@ wonda edit video --operation animatedCaptions --media $VID_MEDIA \
 ```
 
 The video's original audio is preserved. Do NOT replace the audio with TTS — Sora already generated the speech.
+
+**Alternative engine: `--captions-engine ffmpeg` (no Remotion).**
+
+Use when the user wants the typewriter look, an opaque/rounded chyron behind text, or simply wants to skip the Remotion bundle + Chromium download. Plain `brew install ffmpeg` is enough. This path is CLI-only today (it does not go through `editor_job`, so credits are not charged for the local render).
+
+```bash
+# progressive (default for ffmpeg engine) — cumulative reveal,
+# optional rounded pill behind the active word via highlightColor.
+wonda edit video --operation animatedCaptions \
+  --captions-engine ffmpeg --captions-preset progressive \
+  --media $VID_MEDIA \
+  --caption-segments "$(echo "$STT_OUT" | jq -c '.outputs[] | select(.outputKey=="wordTimestamps") | .outputValue | map({text: .word, startS: .start})')" \
+  --params '{"fontFamily":"TikTok Sans","textColor":"#FFFFFF","strokeColor":"#000000","strokeWidth":3,"fontSizeScale":1.1,"paddingBottom":25,"highlightColor":"#FF3D3D","backgroundBorderRadius":18}' \
+  --fonts-dir /path/to/fonts \
+  -o final.mp4
+
+# typewriter — letters appear one at a time at constant interval (60ms/char)
+# with a square white caret. Pass plain white text (no background).
+wonda edit video --operation animatedCaptions \
+  --captions-engine ffmpeg --captions-preset typewriter \
+  --media $VID_MEDIA \
+  --caption-segments "$STT_WORD_TIMESTAMPS" \
+  --params '{"fontFamily":"TikTok Sans","textColor":"#FFFFFF","fontSizeScale":1.1,"paddingBottom":12}' \
+  --fonts-dir /path/to/fonts \
+  -o final.mp4
+```
+
+`--fonts-dir` is required for this engine. Point it at any directory containing the font files you want to use; the renderer picks the file matching `fontFamily`. If the directory does not contain a match, the command errors loudly so the user can correct the path.
+
+Vertical placement is controlled by `paddingBottom` (a percentage of canvas height, distance from canvas bottom to the caption's bottom edge). Sensible values: `12` for traditional bottom-of-frame subtitles, `25` for the TikTok 3/4-from-top sweet spot, `35` for visibly mid-bottom. `paddingTop` does the same when `position` starts with `top-*`. Without these, captions snap to the very edge of the canvas.
 
 **Transitions (effects pipelines on a single video):**
 
