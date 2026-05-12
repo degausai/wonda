@@ -30,6 +30,7 @@ Wondercat orgs are shared wallets with their own seats and billing.
 Members can spend from the org wallet (instead of their personal credits)
 by switching context:
 
+- `wonda organizations list` (aliases: `wonda orgs list`, `wonda org list`) — see every org you belong to with your role and seat plan in each.
 - `wonda use --org <slug>` — sticky org context for this machine. Sets
   `X-Wonda-Org` on every request; holds, charges, and `wonda balance`
   route through the org wallet.
