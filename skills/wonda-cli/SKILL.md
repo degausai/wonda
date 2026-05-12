@@ -276,7 +276,7 @@ When no skill matches, chain individual CLI commands. Each step produces an outp
 ```bash
 wonda generate image --model gpt-image-2 --prompt "..." --aspect-ratio 9:16 --wait -o out.png
 # --params '{"quality":"high"}' — auto/low/medium/high (default auto)
-# --negative-prompt "..."       — override what to exclude (models like cookie have good defaults)
+# --negative-prompt "..."       — override what to exclude (model-dependent)
 # --seed <number>               — pin the seed for reproducible results (model-dependent)
 wonda generate video --model seedance-2 --prompt "..." --duration 5 --params '{"quality":"high"}' --wait -o out.mp4
 wonda generate text --model <model> --prompt "..." --wait
@@ -459,6 +459,20 @@ When `ensure-masks` matters most:
 
 2. **Step-shape preset** (response has `steps:`): these are call-only. Submit by name with `--preset` and accept the published defaults; param tweaking awaits migration to clip-shape. Affected presets today: `bg_remove_scale`, `bullet_time`, `chromatic_aberration`, `psychedelic`, `vhs_fisheye`, `diagonal_wipe`, `nostalgic_summer`, `speed_ramp_transition`.
 
+**Auto-repair safety net (`--auto-repair`, `--face-bbox`).** For `--clips` renders the worker runs a deterministic repair pass on the submitted JSON before rendering, default on. Repairs: width-fit font clamp, descender clamp against canvas bottom, stack-spacing snap (`ROW1_py` from cap-height formula), keyframe-bound clamp to `[0, source_duration]`, same-y-row caption overlap trim, mask full-duration extension, stroke-width zeroing, letter-spacing target snap per font, mask-cutout duration extension, negative-start clamp, and (with `--face-bbox`) face-overlap caption shift. Pass `--auto-repair=false` for strict validation; out-of-spec values then surface as render errors.
+
+```bash
+# Push body captions off the speaker's face. bbox is x1,y1,x2,y2 in canvas pixels (top-left origin).
+wonda transitions run --media $VID --clips ./timeline.json \
+  --face-bbox 200,160,520,520 --wait -o out.mp4
+
+# Strict mode — disable auto-repair to see exactly which clips fail validation.
+wonda transitions run --media $VID --clips ./timeline.json \
+  --auto-repair=false --wait -o out.mp4
+```
+
+`--face-bbox` only shifts body captions. Decorative text you want behind the speaker still routes through an explicit `mask_cutout {prompt: "person"}` clip.
+
 **Output URL paths differ by job type:**
 
 - Inference jobs (generate, audio): `.outputs[0].media.url` and `.outputs[0].media.mediaId`
@@ -481,15 +495,6 @@ Pick something else only when one of these applies:
 - Cheapest possible / fastest drafts → `z-image`
 - Need >1536px / true 4K output → `nano-banana-pro` (1K/2K/4K) or `nano-banana-2` (1K/2K/4K). gpt-image-2 caps at 1536px.
 - gpt-image-2 unavailable / OpenAI down → `nano-banana-2` or `seedream-4-5` or `grok-imagine-pro`
-- Spicy content → `cookie` (SDXL-based, tag-based or natural language prompts) — **ONLY select when the user explicitly asks for spicy content. Never auto-select.**
-
-**Cookie model (`cookie`):** SDXL with DMD acceleration and hires fix. **Restricted: only use when the user explicitly requests spicy content.** Accepts both danbooru-style tags (`1cat, portrait, soft lighting`) and natural language. Supports `--negative-prompt` (has sensible defaults; override only when needed) and `--seed` for reproducibility.
-
-```bash
-wonda generate image --model cookie --prompt "1cat, portrait, soft lighting" --wait -o out.png
-wonda generate image --model cookie --prompt "a woman in a garden, golden hour" \
-  --negative-prompt "ugly, blurry, watermark" --seed 42 --wait -o out.png
-```
 
 ### Video
 
@@ -1036,6 +1041,8 @@ wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
+wonda linkedin browser-bootstrap                     # Inject stored cookies into patchright profile (one-time + on rotation)
+wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (needs patchright-li-driver running; see its README)
 
 # Write
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
