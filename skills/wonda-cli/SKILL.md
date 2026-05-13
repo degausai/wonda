@@ -1042,6 +1042,7 @@ wonda linkedin connections                           # Your connections
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into patchright profile (one-time + on rotation)
 wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (needs patchright-li-driver running; see its README)
+wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON)
 
 # Write
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
@@ -1059,6 +1060,10 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 
 - **Default (API):** Voyager REST API with fingerprint mitigations (profile visit → drawer warm-up → connect). Fast (~3s), supports notes via `customMessage`.
 - **`--browser` (Patchright):** Launches a real undetected Chrome browser, navigates to the profile, and clicks through the UI. Zero fingerprinting risk. Slower (~10s) but fully safe. Use this as a fallback if you want full protection. Requires: `npm i patchright && npx patchright install chromium`.
+
+**Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--max-profiles N` to cap the batch (default 25 on sensitive accounts, hard ceiling 100) and `--out file.json` to write to disk.
+
+For ICP qualification of post engagers, see `content-skills/linkedin-icp-qualify.md`.
 
 ### Reddit
 
