@@ -545,7 +545,9 @@ Seedance family (DEFAULT video model, watermarks automatically removed):
 
 ## Characters
 
-Characters are reusable saved combos (image + optional voice audio) you can mention in Kling prompts with `@name`. The server auto-injects the image as `start_image` and the audio (with its Kling `voice_id`) as `voice_audio` whenever a Kling model is selected. Name rules: must start with a letter, 1–31 chars, alphanumeric + `_`/`-`.
+Characters are reusable saved combos (image + optional voice audio) you can mention in prompts with `@name`. The server auto-injects the image, optional face video, and audio into the right slots for the selected model. Works on Kling 3 Pro (`start_image` + `element_1` + `voice_audio`) and Seedance 2 Omni (`ref_image_1` + `ref_video_1` + `ref_audio_1`). Name rules: must start with a letter, 1–31 chars, alphanumeric + `_`/`-`.
+
+**Provider gotchas (Seedance 2 Omni):** when a character is mentioned, the API routes Seedance to MuAPI automatically. Replicate enforces a 15s `ref_audio_1` cap and rejects famous-celebrity refs with `E005 — input flagged as sensitive`. MuAPI is the reliable path for character-driven jobs. Even on MuAPI, top-tier celebrity refs (think Sydney Sweeney, Leonardo DiCaprio) are blocked with `"Face detected in uploaded image. Please use an image without real people."` Non-celebrity faces and lesser-known public figures pass cleanly. If you see that error on a real-person ref, use Kling 3 Pro instead (its character pipeline runs voice cloning server-side, so the raw face audio never touches a moderation classifier).
 
 **From a Kling clip** — extract a frame + voice from a generation you like:
 
@@ -566,7 +568,7 @@ AUD_MEDIA=$(wonda jobs get inference $AUD --jq '.outputs[0].media.mediaId')
 wonda character create maya --image $IMG_MEDIA --audio $AUD_MEDIA
 ```
 
-List / inspect / update / delete: `wonda character list`, `wonda character get <name>`, `wonda character update <name> --audio $NEW`, `wonda character delete <name>`. Only one character with audio can be referenced per Kling generation.
+List / inspect / update / delete: `wonda character list`, `wonda character get <name>`, `wonda character update <name> --audio $NEW`, `wonda character delete <name>`. Only one character with audio can be referenced per generation.
 
 ## Prompt writing rules
 
@@ -1042,6 +1044,7 @@ wonda linkedin connections                           # Your connections
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into patchright profile (one-time + on rotation)
 wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (needs patchright-li-driver running; see its README)
+wonda linkedin search-posts "<keyword>" --date-range past-week  # Keyword to recent posts + author profile (patchright; for social listening see content-skills/linkedin-social-listening.md)
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON)
 
 # Write
