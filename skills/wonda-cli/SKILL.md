@@ -54,12 +54,13 @@ A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access 
 
 Not all commands are available to every account type:
 
-| Tier                                        | Access                                                                                                                           |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                             |
-| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                    |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.          |
+| Tier                                        | Access                                                                                                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                    |
+| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                |
+| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                       |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                             |
+| **Local** (no API call, no credits)         | `wonda design-extract` (extract brand tokens from a URL via the bundled Patchright + Chromium driver). No auth required. Requires a one-time `wonda stealth-browser install` first. |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
@@ -211,21 +212,20 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                      | Description                                                                                                                           | Input                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| product-video             | Product/scene video — prompt library for all categories                                                                               | optional product image        |
-| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll                                                                    | optional reference            |
-| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy                                                                                 | optional product image        |
-| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                                                                                   | reel or TikTok URL            |
-| ugc-dance-motion          | Dance/motion transfer                                                                                                                 | image + video                 |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                                                                                        | user brief                    |
-| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                    | subreddit + product           |
-| twitter-influencer-search | Find X influencers and amplifiers                                                                                                     | competitor/niche keywords     |
-| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                | app screenshot + audience     |
-| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                             | product + optional image      |
-| ffmpeg                    | All local ffmpeg recipes — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId   |
-| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                     | image mediaId or local path   |
-| remotion-local-render     | Render editorPipeline blueprint steps locally via @remotion/renderer                                                                  | manifest JSON + editor job id |
+| Slug                      | Description                                                                                                                           | Input                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| product-video             | Product/scene video — prompt library for all categories                                                                               | optional product image      |
+| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll                                                                    | optional reference          |
+| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy                                                                                 | optional product image      |
+| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                                                                                   | reel or TikTok URL          |
+| ugc-dance-motion          | Dance/motion transfer                                                                                                                 | image + video               |
+| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                                                                                        | user brief                  |
+| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                    | subreddit + product         |
+| twitter-influencer-search | Find X influencers and amplifiers                                                                                                     | competitor/niche keywords   |
+| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                | app screenshot + audience   |
+| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                             | product + optional image    |
+| ffmpeg                    | All local ffmpeg recipes — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId |
+| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                     | image mediaId or local path |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -258,7 +258,7 @@ Font rule for local caption/text work:
 - Prefer an explicit font file path over a family name.
 - Never assume a font exists. Check first with `fc-match`, `fc-list`, `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`, or `/usr/share/fonts`.
 - If the task is mainly local finishing/captions/formatting/splitting/artifact extraction, check the `ffmpeg` skill before inventing commands.
-- `wonda edit video` renders locally by default for single-video ops (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). The server returns a manifest; the CLI runs `@remotion/renderer` against a CloudFront-hosted bundle, uploads the output, and finalizes the editor_job. No flag needed. Pass `--render-server` only to force Lambda. Multi-video ops (`overlay`, `splitScreen`, `splitScenes`, `motionDesign`) auto-reject with a 400 — the CLI will tell you to use `--render-server`. **`merge` is also rejected locally, but do NOT fall back to `--render-server` — use the local `ffmpeg -f concat` recipe in the `ffmpeg` skill** (server merge can hang for 30+ minutes on inputs >~7MB). See the `remotion-local-render` content skill for the full Remotion recipe (including the STT-free TikTok-style caption flow via `wonda alignment extract-timestamps` → `--caption-segments`).
+- `wonda edit video` renders locally for every single-video op (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). No flag needed: the server returns a manifest, the CLI renders it, uploads the output, and finalizes the editor_job. Multi-video ops (`overlay`, `splitScreen`, `splitScenes`, `motionDesign`, `merge`) are not handled by `wonda edit video`. Build them locally with the `ffmpeg` skill instead (concat, overlay, hstack/vstack, scene assembly). **Never mix per-clip audio then concat** — concat the video tracks first, then layer the full voiceover or music track once over the joined timeline. Per-clip audio bakes create cut-line collisions and silent gaps.
 
 Default local export target unless the user asked otherwise:
 
@@ -336,9 +336,9 @@ wonda edit video --operation animatedCaptions --media $VID_MEDIA \
 
 The video's original audio is preserved. Do NOT replace the audio with TTS — Sora already generated the speech.
 
-**Alternative engine: `--captions-engine ffmpeg` (no Remotion).**
+**Alternative engine: `--captions-engine ffmpeg`.**
 
-Use when the user wants the typewriter look, an opaque/rounded chyron behind text, or simply wants to skip the Remotion bundle + Chromium download. Plain `brew install ffmpeg` is enough. This path is CLI-only today (it does not go through `editor_job`, so credits are not charged for the local render).
+Use when the user wants the typewriter look or an opaque/rounded chyron behind the active word. Plain `brew install ffmpeg` is enough. This path is CLI-only today (it does not go through `editor_job`, so credits are not charged for the render).
 
 ```bash
 # progressive (default for ffmpeg engine) — cumulative reveal,
@@ -665,7 +665,7 @@ wonda edit video --operation textOverlay \
   --params '{"text":"YOUR HEADLINE"}' --wait -o ./out.mp4
 ```
 
-Image `textOverlay` requires `--render-server`; video renders locally by default.
+Image `textOverlay` renders server-side; video `textOverlay` renders locally. No flag needed in either case.
 
 **Font sizing guide:**
 
@@ -973,6 +973,36 @@ wonda media list --kind image --limit 20
 wonda media info <mediaId>
 ```
 
+### Stealth browser (`wonda stealth-browser`)
+
+Stealth-browser primitives backed by Patchright (`^1.59.4`), the undetected Playwright fork. Same Chromium binary that `wonda x tweet --browser` and `wonda linkedin connect --browser` use, but exposed for arbitrary URLs in an ephemeral context: no persistent profile, no session state, no cookies between calls.
+
+One-time setup on a fresh machine:
+
+```bash
+wonda stealth-browser install   # downloads Chromium (~300 MB), installs Patchright npm deps
+```
+
+This installs Patchright + Chromium for ALL four drivers (`stealth-browser record`, `x --browser`, `linkedin --browser`, `design-extract`) so you only run it once.
+
+Today's only run-time subcommand is `record` (URL → webm). Use it for screen recordings of cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check), marketing demo capture, etc.
+
+```bash
+wonda stealth-browser record https://example.notion.site/page \
+  --output recording.webm \
+  --duration 5 \
+  --viewport 960x1080 \
+  --inject-js scripts/page-script.mjs   # optional: runs after load, before timer starts
+
+# Transcode webm to mp4 at 30 fps (Patchright records webm/VP8)
+ffmpeg -y -i recording.webm -t 5 -r 30 -an \
+  -c:v libx264 -pix_fmt yuv420p -crf 18 recording.mp4
+```
+
+The `--inject-js` file is wrapped in an async IIFE so top-level `await` works. It runs AFTER `domcontentloaded` + `networkidle` + 400 ms paint settle, BEFORE the duration timer starts. Any `await` inside counts against the recording window. Use it for dark-theme injection, cookie-banner removal, scroll animations, anything that needs to happen in page context.
+
+Node.js requirement: wonda needs Node >= v20 on PATH. Brew users get it via the `node` dependency; npm users have it by definition; install.sh users may need `brew install node` (or any Node distribution). If Node is missing, `wonda stealth-browser install` fetches a private copy into `~/.wonda/node/`.
+
 ### X/Twitter
 
 Supports reads, writes, and social graph.
@@ -1020,7 +1050,7 @@ All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`
 **Tweet modes:** The `tweet` command has two modes:
 
 - **Default (API):** X's internal GraphQL (`CreateTweet` for ≤280 chars, `CreateNoteTweet` for long-form Premium). Fast (<1s), supports `--attach` for media. Occasionally fails with error 226 when X rotates query IDs or feature flags — when that happens, recapture via `twitter-tone-research/_artifacts/scripts/capture-ct-bw.mjs` and bump the three knobs in `xclient/`.
-- **`--browser` (Patchright):** Launches a real undetected Chrome browser, opens x.com compose, types with human-style jitter, clicks Post. Supports `--attach` (image/gif/video, up to 4) — files are driven through the hidden compose input via Playwright's `setInputFiles`, no native picker dialog opens; the script waits for X's upload pipeline to finalize (up to 5 min for video) before submitting. Zero fingerprinting risk. Slower (~10s text, ~30-90s with video) but fully drift-proof — no queryIds, feature flags, or request shape to maintain. Requires: `npm i patchright && npx patchright install chromium`.
+- **`--browser` (Patchright):** Launches a real undetected Chrome browser, opens x.com compose, types with human-style jitter, clicks Post. Supports `--attach` (image/gif/video, up to 4) — files are driven through the hidden compose input via Playwright's `setInputFiles`, no native picker dialog opens; the script waits for X's upload pipeline to finalize (up to 5 min for video) before submitting. Zero fingerprinting risk. Slower (~10s text, ~30-90s with video) but fully drift-proof — no queryIds, feature flags, or request shape to maintain. Patchright + Chromium auto-install to `~/.wonda/xclient/` on first invocation (~315 MB, one-time, shared with any Playwright install).
 
 ### LinkedIn
 
@@ -1043,8 +1073,14 @@ wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into patchright profile (one-time + on rotation)
-wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (needs patchright-li-driver running; see its README)
+wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (daemon auto-starts if needed)
 wonda linkedin search-posts "<keyword>" --date-range past-week  # Keyword to recent posts + author profile (patchright; for social listening see content-skills/linkedin-social-listening.md)
+
+# Daemon lifecycle (the Patchright LinkedIn daemon)
+wonda linkedin daemon start                          # Spawn detached + wait for ready (uses stored cookies)
+wonda linkedin daemon status                         # Alive? uptime, cookie age, last health probe
+wonda linkedin daemon stop                           # Graceful quit
+wonda linkedin daemon logs --follow                  # tail driver.log
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON)
 
 # Write
@@ -1062,7 +1098,7 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 **Connection request modes:** The `connect` command has two modes:
 
 - **Default (API):** Voyager REST API with fingerprint mitigations (profile visit → drawer warm-up → connect). Fast (~3s), supports notes via `customMessage`.
-- **`--browser` (Patchright):** Launches a real undetected Chrome browser, navigates to the profile, and clicks through the UI. Zero fingerprinting risk. Slower (~10s) but fully safe. Use this as a fallback if you want full protection. Requires: `npm i patchright && npx patchright install chromium`.
+- **`--browser` (Patchright):** Drives the long-running Patchright daemon for full stealth. Daemon auto-starts on first `--browser` invocation if not already running (override with `--no-auto-start`). Zero fingerprinting risk. Slower (~10s) but fully safe. Use as a fallback when you need extra protection. Patchright + Chromium auto-install to `~/.wonda/patchright-li-driver/` on first invocation (~315 MB, one-time). Cookie pickup: daemon reads `~/.wonda/linkedin-cookies.json` (what `wonda linkedin auth set` writes) at boot and watches for updates every 5 min, so you can rotate cookies without restarting the daemon. Restarting the daemon mid-session is penalized by LinkedIn anti-fraud — use `wonda linkedin auth set` + auto-refresh instead.
 
 **Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--max-profiles N` to cap the batch (default 25 on sensitive accounts, hard ceiling 100) and `--out file.json` to write to disk.
 
@@ -1128,6 +1164,40 @@ wonda reddit chat refresh                                # Force-refresh the Mat
 **Important**: The chat token expires every ~24h. The CLI auto-refreshes on use, but if it expires fully, re-run `auth-set`. Rate limit DM sends to 15-20/day with varied text to avoid detection. The `send` command includes a typing delay (1-5s) to mimic human behavior.
 
 ## Workflow & discovery
+
+### Brand extraction (`design-extract`)
+
+Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor) into a `DESIGN.md` file an AI coding agent can read. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`). No auth, no credits, no API call.
+
+Requires a one-time `wonda stealth-browser install` to download Patchright + Chromium (~300 MB, shared across all four browser drivers).
+
+This is the in-house replacement for the previous `npx`-based brand-extraction CLI used in the `slide-generation` / `slide-generation-system` / `creative-static-ads` / `premium-static-ads` skills.
+
+```bash
+wonda design-extract <url>                                # Writes ./output/<domain>/DESIGN.md
+wonda design-extract <url> --output ./refs                # Writes ./refs/<domain>/DESIGN.md
+wonda design-extract <url> --json                         # Also writes tokens.json alongside DESIGN.md
+wonda design-extract <url> --screenshot                   # Also writes page.png alongside DESIGN.md
+wonda design-extract <url> --download-assets              # Also downloads hero decor + non-Google fonts into <dir>/assets/
+wonda design-extract <url> --viewport 1440x900            # Override default 1920x1080 viewport
+```
+
+Flags:
+
+- `--output <dir>`: output directory root. Defaults to `./output/`. Files always land under `<dir>/<domain>/`.
+- `--json`: also write `tokens.json` (raw structured JSON of the extraction).
+- `--screenshot`: also write `page.png` (full-page screenshot at the chosen viewport).
+- `--download-assets`: also download every `heroDecor[].url` and every non-Google `fonts[].url` into `<dir>/assets/` (and `<dir>/assets/fonts/`). Adds `localPath` to each downloaded entry in `tokens.json`. Skips `data:` URIs and Google Fonts CDN hosts.
+- `--viewport WxH`: viewport size for the headless browser. Default `1920x1080`.
+
+Outputs (always to `<output-dir>/<domain>/`):
+
+- `DESIGN.md`: always written. Markdown summary of tokens, typography, hero decor, logo. Read this in the slide / static-ad skills before composing HTML.
+- `tokens.json`: only when `--json` is passed.
+- `page.png`: only when `--screenshot` is passed.
+- `assets/`: only when `--download-assets` is passed. Contains the raw hero decor files plus `assets/fonts/` for any non-Google `@font-face` URLs.
+
+Prints written file paths to stdout. Non-zero exit on failure (network error, navigation timeout, browser crash).
 
 ### Video analysis
 
