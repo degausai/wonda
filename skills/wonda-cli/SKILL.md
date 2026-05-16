@@ -54,13 +54,13 @@ A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access 
 
 Not all commands are available to every account type:
 
-| Tier                                        | Access                                                                                                                                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                    |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                |
-| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                       |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                             |
-| **Local** (no API call, no credits)         | `wonda design-extract` (extract brand tokens from a URL via the bundled Patchright + Chromium driver). No auth required. Requires a one-time `wonda stealth-browser install` first. |
+| Tier                                        | Access                                                                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                                      |
+| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                                  |
+| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                         |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                               |
+| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda stealth-browser install` first. |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
@@ -188,7 +188,20 @@ When asked to create content, follow this order:
 ### Step 1: Gather context
 
 ```bash
-wonda brand                                                    # Brand identity, colors, products, audience
+wonda brand                                                    # Active brand: identity, colors, fonts, logos, products
+wonda brand list                                               # All brands owned by this account/org
+wonda brand show <brand-id>                                    # Specific brand
+wonda brand extract https://stripe.com                         # Local-only: writes ./output/stripe.com/{DESIGN.md, tokens.json, assets/}
+wonda brand extract https://stripe.com --save --make-active    # Local + persist + activate (the common path)
+wonda brand extract https://stripe.com --save --name "Stripe"  # Persist with a custom name
+wonda brand extract https://stripe.com --no-output --save      # Don't write to disk, persist only
+wonda brand save                                               # Persist the most recent ./output/<domain>/ dir to the server
+wonda brand save --from ./output/stripe.com --make-active
+wonda brand pull <brand-id>                                    # Download a saved brand back to ./output/<domain>/
+wonda brand activate <brand-id>                                # Set as the active brand
+wonda brand upload-logo <brand-id> https://acme.com/logo.svg   # Attach a logo by URL (--variant wordmark|icon|dark|light)
+wonda brand upload-font <brand-id> https://acme.com/Geist.woff2 --weight 700
+wonda brand delete <brand-id>
 wonda analytics instagram                                      # What content performs well
 wonda scrape social --handle @competitor --platform instagram --wait  # Competitive research (if relevant)
 
@@ -983,7 +996,7 @@ One-time setup on a fresh machine:
 wonda stealth-browser install   # downloads Chromium (~300 MB), installs Patchright npm deps
 ```
 
-This installs Patchright + Chromium for ALL four drivers (`stealth-browser record`, `x --browser`, `linkedin --browser`, `design-extract`) so you only run it once.
+This installs Patchright + Chromium for ALL four drivers (`stealth-browser record`, `x --browser`, `linkedin --browser`, `brand extract`) so you only run it once.
 
 Today's only run-time subcommand is `record` (URL → webm). Use it for screen recordings of cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check), marketing demo capture, etc.
 
@@ -1165,39 +1178,49 @@ wonda reddit chat refresh                                # Force-refresh the Mat
 
 ## Workflow & discovery
 
-### Brand extraction (`design-extract`)
+### Brand extraction (`brand extract`)
 
-Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor) into a `DESIGN.md` file an AI coding agent can read. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`). No auth, no credits, no API call.
+Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor, CSS pattern backgrounds, dashed/dotted border treatments, `:root` custom properties) into a `DESIGN.md` + `tokens.json` + `assets/`. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`).
 
 Requires a one-time `wonda stealth-browser install` to download Patchright + Chromium (~300 MB, shared across all four browser drivers).
 
 This is the in-house replacement for the previous `npx`-based brand-extraction CLI used in the `slide-generation` / `slide-generation-system` / `creative-static-ads` / `premium-static-ads` skills.
 
 ```bash
-wonda design-extract <url>                                # Writes ./output/<domain>/DESIGN.md
-wonda design-extract <url> --output ./refs                # Writes ./refs/<domain>/DESIGN.md
-wonda design-extract <url> --json                         # Also writes tokens.json alongside DESIGN.md
-wonda design-extract <url> --screenshot                   # Also writes page.png alongside DESIGN.md
-wonda design-extract <url> --download-assets              # Also downloads hero decor + non-Google fonts into <dir>/assets/
-wonda design-extract <url> --viewport 1440x900            # Override default 1920x1080 viewport
+# Local-only — no auth, no credits, no API call
+wonda brand extract https://linear.app                       # Writes ./output/linear.app/{DESIGN.md, tokens.json, assets/}
+wonda brand extract https://stripe.com --output ./refs       # Writes ./refs/stripe.com/...
+wonda brand extract https://vercel.com --screenshot          # Also writes page.png
+wonda brand extract https://stripe.com --viewport 1440x900   # Override default 1920x1080
+
+# Persist to the server (uploads assets via media presign + POSTs /brand/save)
+wonda brand extract https://stripe.com --save                # Local + persist
+wonda brand extract https://stripe.com --save --make-active  # Local + persist + activate (the common path)
+wonda brand extract https://stripe.com --no-output --save    # Don't write to disk, persist only
+
+# Move a persisted brand around
+wonda brand save --from ./output/stripe.com --make-active    # Persist a previously-extracted dir
+wonda brand pull <brand-id>                                  # Download a saved brand back to ./output/<domain>/
 ```
 
 Flags:
 
-- `--output <dir>`: output directory root. Defaults to `./output/`. Files always land under `<dir>/<domain>/`.
-- `--json`: also write `tokens.json` (raw structured JSON of the extraction).
-- `--screenshot`: also write `page.png` (full-page screenshot at the chosen viewport).
-- `--download-assets`: also download every `heroDecor[].url` and every non-Google `fonts[].url` into `<dir>/assets/` (and `<dir>/assets/fonts/`). Adds `localPath` to each downloaded entry in `tokens.json`. Skips `data:` URIs and Google Fonts CDN hosts.
+- `--save`: upload `assets/` via the media presign flow and POST `{tokens, mediaIds}` to `/api/v1/brand/save`. Requires auth.
+- `--make-active`: implies `--save`. Sets the new brand as active.
+- `--output <dir>`: override the local output dir. Default is `./output/<domain>/`. Mutually exclusive with `--no-output`.
+- `--no-output`: don't write to disk (in-memory extract for piping). Mutually exclusive with `--output`.
+- `--name "Brand Name"`: override the brand name when persisting. Defaults to the domain stem capitalized.
+- `--screenshot`: also save `page.png` alongside DESIGN.md.
 - `--viewport WxH`: viewport size for the headless browser. Default `1920x1080`.
 
-Outputs (always to `<output-dir>/<domain>/`):
+Outputs (when `--no-output` is not set, always to `<output-dir>/<domain>/`):
 
-- `DESIGN.md`: always written. Markdown summary of tokens, typography, hero decor, logo. Read this in the slide / static-ad skills before composing HTML.
-- `tokens.json`: only when `--json` is passed.
+- `DESIGN.md`: Markdown summary of tokens, typography, hero decor, logo, CSS patterns, dashed borders, and root CSS variables. Read this in the slide / static-ad skills before composing HTML.
+- `tokens.json`: raw structured JSON of the extraction.
 - `page.png`: only when `--screenshot` is passed.
-- `assets/`: only when `--download-assets` is passed. Contains the raw hero decor files plus `assets/fonts/` for any non-Google `@font-face` URLs.
+- `assets/`: raw hero decor files plus `assets/fonts/` for any non-Google `@font-face` URLs. Always written when not `--no-output`.
 
-Prints written file paths to stdout. Non-zero exit on failure (network error, navigation timeout, browser crash).
+Prints written file paths to stdout. With `--save`, also prints the API response (`brandId`, `sourceDomain`, `warnings`). Non-zero exit on failure (network error, navigation timeout, browser crash, save failure).
 
 ### Video analysis
 
