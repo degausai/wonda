@@ -459,17 +459,14 @@ When `ensure-masks` matters most:
 
 **Multi-scene presets (`requiresMultiScene: true`).** Some presets use scene-aware logic and expect a video with multiple cuts/scenes. Check `requiresMultiScene` in `wonda transitions presets`. If true, feeding a single continuous shot will produce only one scene and the effect may look underwhelming. Combine clips first or use a video with natural cuts.
 
-**Tweaking preset params.** Two cases depending on the preset's response shape from `wonda transitions presets --json`:
+**Tweaking preset params.** Every preset is clip-shape. Pull a single preset with `wonda transitions preset <name> --json`, read its `clips:` (single-track) or `tracks:` (multi-track) field, edit any clip param, and submit as `--clips`. For multi-track presets, flatten by giving each clip a `track` index drawn from the track it came from. If the preset declares `sceneTransitions:`, pass that array through unchanged on the request.
 
-1. **Clip-shape preset** (response has `clips:` or `tracks:`): copy the JSON, edit any clip param, and submit as `--clips`. The request body shape matches the response shape.
-
-   ```bash
-   wonda transitions presets --json | jq '.presets[] | select(.name=="flash_glow_montage") | .clips' > /tmp/clips.json
-   # edit /tmp/clips.json
-   wonda transitions run --media $VID --clips "$(cat /tmp/clips.json)" --wait -o out.mp4
-   ```
-
-2. **Step-shape preset** (response has `steps:`): these are call-only. Submit by name with `--preset` and accept the published defaults; param tweaking awaits migration to clip-shape. Affected presets today: `bg_remove_scale`, `bullet_time`, `chromatic_aberration`, `psychedelic`, `vhs_fisheye`, `diagonal_wipe`, `nostalgic_summer`, `speed_ramp_transition`.
+```bash
+# Single-track preset (e.g. flash_glow_montage): copy clips: directly
+wonda transitions preset flash_glow_montage --json | jq '.preset.clips' > clips.json
+# edit clips.json
+wonda transitions run --media $VID --clips "$(cat clips.json)" --wait -o out.mp4
+```
 
 **Auto-repair safety net (`--auto-repair`, `--face-bbox`).** For `--clips` renders the worker runs a deterministic repair pass on the submitted JSON before rendering, default on. Repairs: width-fit font clamp, descender clamp against canvas bottom, stack-spacing snap (`ROW1_py` from cap-height formula), keyframe-bound clamp to `[0, source_duration]`, same-y-row caption overlap trim, mask full-duration extension, stroke-width zeroing, letter-spacing target snap per font, mask-cutout duration extension, negative-start clamp, and (with `--face-bbox`) face-overlap caption shift. Pass `--auto-repair=false` for strict validation; out-of-spec values then surface as render errors.
 
