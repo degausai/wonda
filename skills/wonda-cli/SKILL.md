@@ -330,8 +330,6 @@ wonda audio extract-voice --model replicate-demucs --attach $MEDIA \
   --wait -o vocals.wav
 ```
 
-DO NOT use `wonda edit video --operation enhanceAudio` or `--operation voiceExtractor` — those paths are deprecated. They still work but emit a warning, and they route through the heavier editor_job pipeline for no functional reason.
-
 **Add animated captions to a video:**
 
 The `animatedCaptions` operation handles everything in one step — it extracts audio, transcribes for word-level timing, and renders animated word-by-word captions onto the video.
