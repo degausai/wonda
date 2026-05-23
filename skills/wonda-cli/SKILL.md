@@ -64,23 +64,6 @@ Not all commands are available to every account type:
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
-### Social signups (Instagram, TikTok, etc.)
-
-Drive them with the `wonda device` primitives + a throwaway mailbox from `wonda email`. The screenshot → decide → tap/type/swipe loop is how these flows work — there's no shortcut command, and that's fine: social apps change their UI constantly and any canned flow would drift faster than you could maintain it.
-
-Standard loop:
-
-1. `wonda email account create --random` → save `{email, password}`. Persist the resulting platform login with `wonda credentials create --website instagram.com --username <handle> --email <email> --password-stdin <<< "<pw>"` (passwords are AES-256-GCM encrypted at rest; retrieve later with `wonda credentials get <id>`).
-2. `wonda device create` → pick a `ready` device (poll `wonda device get <id> --fields status`).
-3. `wonda device launch <device-id> com.instagram.android` (or `com.zhiliaoapp.musically` for TikTok). Fall back to `wonda device open-url` if you'd rather start in the web flow.
-4. Loop: `wonda device screenshot <device-id> > s.json` → decode the base64 PNG → read → pick an action → `tap | type | swipe | key` → screenshot again. Use `--text "SomeButtonLabel"` on `tap` before guessing coordinates; fall back to `--x --y` read off the screenshot for elements without matching text (number pickers, date spinners, etc.).
-5. When the app sends a verification email, `wonda email inbox wait <email> --timeout 120` — returns `{codes: ["483921"], links: [...]}` with the 6-digit code already extracted. `wonda device type <device-id> --text "<code>"` to feed it back. **Race-safety**: capture a timestamp _before_ triggering the signup (`SINCE=$(date -u +%FT%TZ)`) and pass `--since "$SINCE"` — otherwise a fast mail server can land the email before your wait call and the old snapshot filters it out.
-6. For number/date spinners: tap on the highlighted cell, Android pops up a numeric or alphabetic keyboard, `wonda device type --text "<value>"` replaces the selected text. `wonda device key --code 4` dismisses the keyboard when done.
-
-**Consent-like taps** — anything that accepts Terms/Privacy/Cookies, grants permissions, or publishes something. Before starting an automation that may hit these, ask the user once in chat whether to auto-accept them. If they say yes, tap through without pausing; if they say no, stop at each one and confirm. This does not apply to CAPTCHAs or "prove you're human" puzzles — always hand those off via `wonda device stream` (see next section).
-
-**Rate-limit signals** — if the app shows you a visual puzzle ("we want to make sure you're a real person"), stop and hand off to the user with `wonda device stream <id>` (see next section). Don't click through puzzles yourself.
-
 ### Voice cloning
 
 Clone a voice from a 10s+ audio clip and use it in TTS. Hard limit: 20 cloned voices per account. Cost: $1.50 per clone.
@@ -152,15 +135,6 @@ wonda credentials events <id>
 Fields: `website` (required — typed input like `insta` is canonicalized to `instagram.com`), `username`, `email`, `password` (required), `metadata` (arbitrary JSON). At least one of `username` / `email` must be present. Multiple records per `(website, username)` are allowed — dedupe on your side if you need to.
 
 **Event log**: every `credentials get`/`use`, `create`, password rotate, and other updates are recorded as events on the credential (actor: `cli` | `web` | `system`). Use `credentials events <id>` or the web UI's history icon to audit. The event log is append-only and cascades on credential delete.
-
-### Handing off to a human
-
-If automation hits a screen that requires a human to take over (consent flow you shouldn't auto-accept, ambiguous UI, step where the user prefers to act themselves), use `wonda device stream <device-id>` — returns a `playerUrl` signed with a short-lived JWT (1h). Give that URL to the user, they act in their own browser, and automation can resume afterward.
-
-```bash
-wonda device stream <device-id>
-# → { "streamUrl": "wss://…", "playerUrl": "https://…", "deviceType": "social" }
-```
 
 ### Global output flags
 
