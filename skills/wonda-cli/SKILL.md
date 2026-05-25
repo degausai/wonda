@@ -1149,7 +1149,7 @@ wonda reddit chat refresh                                # Force-refresh the Mat
 
 ### Brand extraction (`brand extract`)
 
-Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor, CSS pattern backgrounds, dashed/dotted border treatments, `:root` custom properties) into a `DESIGN.md` + `tokens.json` + `assets/`. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`).
+Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor, CSS pattern backgrounds, dashed/dotted border treatments, `:root` custom properties, headline emphasis pattern, film-grain/noise overlay) into a `DESIGN.md` + `tokens.json` + `assets/`. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`).
 
 Requires a one-time `wonda stealth-browser install` to download Patchright + Chromium (~300 MB, shared across all four browser drivers).
 
