@@ -54,13 +54,13 @@ A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access 
 
 Not all commands are available to every account type:
 
-| Tier                                        | Access                                                                                                                                                                                                |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                                      |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                                  |
-| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                         |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                               |
-| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda stealth-browser install` first. |
+| Tier                                        | Access                                                                                                                                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                          |
+| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                      |
+| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                             |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                   |
+| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
@@ -145,6 +145,95 @@ All commands support these output control flags:
 - `-o <path>` — Download output to file (implies `--wait`)
 - `--fields status,outputs` — Select specific JSON fields
 - `--jq '.outputs[0].media.url'` — Filter JSON output with a jq expression
+
+### WAB / Wonda Automation Browser (`wonda wab`)
+
+The Wonda Automation Browser (WAB) is a premium stealth antidetect browser, hardened so platforms cannot fingerprint it as automation. `wonda wab` is the one command for the antidetect Chromium stack (Patchright, the undetected Playwright fork). It has two faces:
+
+- **Authenticated sessions.** One persistent headful Chromium per persona that holds signed-in sessions for LinkedIn, X, Reddit, and friends. The CLI spawns it on demand, lets it idle out, and routes platform reads/writes through it whenever a command runs `--via wab`. Cookies live in the persona's Chromium profile, not in `~/.wonda/config.json`.
+- **Anonymous capture.** `wonda wab record <url>` (and `wonda brand extract`) drive an ephemeral Chromium with a fresh fingerprint, no persona, no cookies. See the `record` block below.
+
+The mental model: you have **accounts** (one identity per platform). Each platform command routes to that account's cookies via either the flat JSON store (`--via cookies`, fast, no Chromium) or the account's **persona** (`--via wab`, live antidetect Chromium). A persona is the Chromium envelope that can hold multiple accounts under one fingerprint. In almost every case the persona is auto-created on first `--via wab` use, named after the account, so you never type a persona name.
+
+```bash
+wonda wab install                             # one-time: npm install + patchright chromium (shared by sessions, record, brand extract)
+wonda wab start [account]                     # spawn (offscreen by default; --visible to show)
+wonda wab stop [account]                      # graceful shutdown
+wonda wab status                              # list personas + last activity
+wonda wab login <account> <linkedin|x|reddit> # open headful window, user logs in, cookies persist
+wonda wab check <account> <linkedin|x|reddit> # non-interactive session-alive probe
+wonda wab bind <persona> --x <acct> --reddit <acct> --linkedin <acct>  # multi-account power-user path: bind N accounts to ONE persona
+wonda wab record <url>                        # anonymous one-shot capture (no account, no cookies), see below
+wonda wab sync-cookies [account]              # force wab → disk cookie sync now (don't wait for the 10-min timer)
+wonda wab logs [account] --tail 100           # tail driver.log (--audit for structured per-command log)
+wonda wab errors --tail 20 --since 24h        # tail the cross-persona action-failure log
+wonda wab bundle-failures list                # recent action failure bundles (one per failed run: screenshot, dom, visible-elements, cookies-summary REDACTED)
+wonda wab bundle-failures show <id>           # print manifest + file tree for a bundle (id = unix-ms-ts prefix)
+wonda wab bundle-failures ship <id>           # zip to ~/Downloads/wonda-failure-<id>.zip for sharing
+wonda wab bundle-failures prune               # remove bundles older than 30d (or --max-per-persona, --all)
+# Telemetry: on every wab action failure we report (action, platform, reason, error-string, has_bundle, cli_version) as a wab_action_failed PostHog event so maintainers can spot platform rotations across users. NO bundle contents, NO cookies, NO DOM, NO screenshots leave the user's machine. Opt out: WONDA_TELEMETRY_DISABLED=1
+wonda wab migrate-legacy                      # copy a legacy patchright-li-driver profile into a persona slot
+wonda wab restore <persona> [timestamp]       # restore from an hourly snapshot (--list to enumerate)
+wonda wab backup enable                       # opt in: auto-push synced cookie JSON to wondercat after every disk sync
+wonda wab backup disable                      # opt out (existing cloud backups untouched)
+wonda wab backup status                       # show config + remote inventory
+wonda wab backup push [account]               # one-shot manual push for all platform bindings
+wonda wab backup pull [account]               # restore cloud cookies → ~/.wonda/<platform>-cookies/<account>.json on a fresh machine
+wonda wab backup list                         # inventory of cloud backups (metadata only)
+wonda wab backup delete <plat> <persona> [acct] # remove one backup
+```
+
+Lifecycle commands take an `--account` (e.g. `wonda wab login mathieu linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
+
+**Anonymous capture (`record`).** `wonda wab record <url>` records a URL to webm in an ephemeral Chromium (fresh fingerprint each call, no persona, no cookies). Use it for cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check) and marketing demo capture.
+
+```bash
+wonda wab record https://example.notion.site/page \
+  --output recording.webm \
+  --duration 5 \
+  --viewport 960x1080 \
+  --inject-js scripts/page-script.mjs   # optional: runs after load, before timer starts
+
+# Transcode webm to mp4 at 30 fps (Patchright records webm/VP8)
+ffmpeg -y -i recording.webm -t 5 -r 30 -an \
+  -c:v libx264 -pix_fmt yuv420p -crf 18 recording.mp4
+```
+
+The `--inject-js` file is wrapped in an async IIFE so top-level `await` works. It runs AFTER `domcontentloaded` + `networkidle` + 400 ms paint settle, BEFORE the duration timer starts. Any `await` inside counts against the recording window. Use it for dark-theme injection, cookie-banner removal, scroll animations, anything that needs to happen in page context.
+
+Node.js requirement: wonda needs Node >= v20 on PATH. Brew users get it via the `node` dependency; npm users have it by definition; install.sh users may need `brew install node` (or any Node distribution). If Node is missing, `wonda wab install` fetches a private copy into `~/.wonda/node/`.
+
+**Cookie cloud backup.** Off by default. Once enabled with `wonda wab backup enable`, the WAB driver pushes the synced cookie JSON for each bound platform to the wondercat backend after every wab → disk sync (and graceful shutdown). Stored **plaintext** server-side (no client-side encryption); the trade-off is self-serve recovery from `wonda wab backup pull <account>` on a fresh machine. Per (account, platform, persona, account_label) row, last-write-wins, rate-limited to one push per 60s.
+
+Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platform action scripts under `actions/<platform>/`.
+
+**Per-command transport (`--via`).** `linkedin`, `x`, and `reddit` commands take:
+
+- `--via cookies|wab`: `cookies` reads the flat per-account JSON store (fast, no Chromium); `wab` routes through the account's persona Chromium (cookies + TLS fingerprint inherit from a real browser session). An unsupported value errors loudly rather than silently downgrading.
+- `--account <name>`: which on-disk identity to use (cookie filename / persona). Persona resolution is implicit: the first `--via wab` use auto-creates a persona named after the account and (on a TTY) chains straight into login.
+
+**Defaults differ for reads vs writes.** Read commands (profile, posts, search, timeline, etc.) default to `cookies` (direct API), because that path is fast and detection-safe. Write / engagement commands (post, comment, like, follow, connect, message, repost, delete) default to `wab`, because the cookie-API path triggers anti-abuse heuristics on LinkedIn / X / Reddit at any meaningful volume. Pass `--via cookies` to a write command if you explicitly want the legacy API path (where the command supports it).
+
+**Commands that require `--via wab`.** A few commands have no cookie path and only run through the Wonda Automation Browser: `wonda linkedin comment`, `wonda x delete`, and `wonda x reply --attach`. On these, the default already resolves to wab (one stderr line noting it); passing `--via cookies` explicitly errors. Reddit's writes (`vote`, `comment`, `subscribe`, `save`, `unsave`, `delete`, and subreddit `submit`) are likewise wab-only.
+
+**Per-account credentials.** Cookies live in per-account JSON files on disk:
+
+- `~/.wonda/x-cookies/<account>.json`
+- `~/.wonda/reddit-cookies/<account>.json`
+- `~/.wonda/linkedin-cookies/<account>.json` (auto-migrated from the legacy single-file format)
+
+Pass `--account <name>` to `auth set` to keep multiple logins side-by-side. The binding is recorded against the account's persona in `account-bindings.json` and, if the persona's Chromium is running, the rotated cookies get pushed into the live context. The driver also syncs cookies back to disk every 10 minutes (and on graceful shutdown), so rotated cookies (ct0 cycles, token_v2 server-side refresh, etc.) flow back to the cookies path without manual re-paste.
+
+### Config keys
+
+`wonda config get|set|list` keys:
+
+- `api-key`: your wondercat API key.
+- `base-url`: API base (defaults to prod, set to `https://staging.api.wondercat.ai` for staging).
+- `default-account`: account used when a platform command doesn't pass `--account`.
+- `wab-backup-enabled`: `true`/`false` for cookie cloud backup (same as `wonda wab backup enable`/`disable`).
+
+Transport is NOT a config key. Each command picks it per kind (reads default to `cookies`, writes / engagement default to `wab`), identically on every platform. Override it per command with `--via cookies|wab` (where the platform supports it).
 
 ## How to think about content creation
 
@@ -484,6 +573,7 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 - Quality complaint or different style → `sora2` or `sora2pro`
 - Max single-clip duration is **15s** for Seedance 2, **20s** for Sora → for longer content, stitch multiple clips via merge
 - Veo (`veo3_1`, `veo3_1-fast`) is available but NOT in the default waterfall. Only pick Veo when the user explicitly asks for Veo by name.
+- Gemini Omni (`gemini-omni-video`) is available but NOT in the default waterfall. Only pick it when the user asks for Gemini by name, or specifically needs multi-image reference T2V/I2V (up to 7 reference images) or 4K output.
 
 **Image-to-video routing (MANDATORY when attaching a reference image):**
 
@@ -503,6 +593,7 @@ Default: `seedance-2` (duration 5/10/15s, default 5s, quality: high). Escalation
 **Other video models:**
 
 - `grok-imagine-video` — xAI video generation, 5-15s, supports 7 aspect ratios including 4:3 and 3:2
+- `gemini-omni-video`: Google Gemini Omni. Text-to-video and image-to-video with up to 7 reference images (slots `reference_image_1` through `reference_image_7`). Durations 4/6/8/10s, aspect ratios 9:16 and 16:9, resolutions 720p / 1080p / 4K. Pricing: $0.15 base + $0.075/s at 720p/1080p, $0.75 base + $0.075/s at 4K. No native audio (pair with a separate audio model if speech is needed).
 - `topaz-video-upscale` — Upscale video resolution (1-4x factor, supports fps conversion)
 - `sync-lipsync-v2-pro` — Legacy lipsync for user-supplied video + audio pairs. Inferior to native-audio generation and almost never the right choice for new content. See the "Lip sync" section for rules.
 
@@ -955,45 +1046,18 @@ wonda media list --kind image --limit 20
 wonda media info <mediaId>
 ```
 
-### Stealth browser (`wonda stealth-browser`)
-
-Stealth-browser primitives backed by Patchright (`^1.59.4`), the undetected Playwright fork. Same Chromium binary that `wonda x tweet --browser` and `wonda linkedin connect --browser` use, but exposed for arbitrary URLs in an ephemeral context: no persistent profile, no session state, no cookies between calls.
-
-One-time setup on a fresh machine:
-
-```bash
-wonda stealth-browser install   # downloads Chromium (~300 MB), installs Patchright npm deps
-```
-
-This installs Patchright + Chromium for ALL four drivers (`stealth-browser record`, `x --browser`, `linkedin --browser`, `brand extract`) so you only run it once.
-
-Today's only run-time subcommand is `record` (URL → webm). Use it for screen recordings of cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check), marketing demo capture, etc.
-
-```bash
-wonda stealth-browser record https://example.notion.site/page \
-  --output recording.webm \
-  --duration 5 \
-  --viewport 960x1080 \
-  --inject-js scripts/page-script.mjs   # optional: runs after load, before timer starts
-
-# Transcode webm to mp4 at 30 fps (Patchright records webm/VP8)
-ffmpeg -y -i recording.webm -t 5 -r 30 -an \
-  -c:v libx264 -pix_fmt yuv420p -crf 18 recording.mp4
-```
-
-The `--inject-js` file is wrapped in an async IIFE so top-level `await` works. It runs AFTER `domcontentloaded` + `networkidle` + 400 ms paint settle, BEFORE the duration timer starts. Any `await` inside counts against the recording window. Use it for dark-theme injection, cookie-banner removal, scroll animations, anything that needs to happen in page context.
-
-Node.js requirement: wonda needs Node >= v20 on PATH. Brew users get it via the `node` dependency; npm users have it by definition; install.sh users may need `brew install node` (or any Node distribution). If Node is missing, `wonda stealth-browser install` fetches a private copy into `~/.wonda/node/`.
-
 ### X/Twitter
 
 Supports reads, writes, and social graph.
+
+> ⚠️ **Anti-fraud caution: don't probe freshly-pasted cookies.** When you've just received cookies (yours or a user's), the FIRST request on them should be the operation the user actually wants, not `wonda x auth check`, not `wonda x home`, not anything that fires a probe. Burst activity on a new IP / device / process is the textbook signal X (and Reddit / LinkedIn / IG) flag as credential theft, and the cookies get shadow-banned or hard-killed. If you must verify, use `wonda x auth check --account <name> --via wab` (that routes through the account's existing logged-in browser session: same IP, same fingerprint, same browsing history) instead of firing a raw API request from a fresh process.
 
 ```bash
 # Auth setup (run `wonda x auth --help` for details)
 wonda x auth set --auth-token <token> --ct0 <ct0>
 wonda x auth set --account burner --auth-token <...> --ct0 <...>  # multi-account
-wonda x auth check
+wonda x auth check                                              # raw probe, see warning above
+wonda x auth check --account <name> --via wab               # safe: routes via account's WAB session
 
 # Read
 wonda x search "sneakers" -n 20                     # Search tweets
@@ -1011,9 +1075,9 @@ wonda x lists @handle                                # User's lists (--member-of
 wonda x list-timeline <list-id-or-url>               # Tweets from a list
 wonda x news --tab trending                          # Trending topics (tabs: for_you, trending, news, sports, entertainment)
 
-# Write (uses internal API — use on secondary accounts)
+# Write (defaults to --via wab; pass --via cookies for the internal-API path on secondary accounts)
 wonda x tweet "Hello world"                          # Post a tweet
-wonda x tweet "Hello world" --browser                # Full stealth via real browser (Patchright)
+wonda x tweet "Hello world" --account <name> --via wab  # Full stealth via real browser
 wonda x tweet "Hello world" --attach ~/clip.mp4      # Attach image/gif/video (up to 4)
 wonda x reply <tweet-id-or-url> "Great point"        # Reply
 wonda x like <tweet-id-or-url>                       # Like
@@ -1029,20 +1093,23 @@ wonda x refresh-ids                                  # Refresh cached GraphQL qu
 
 All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`, `--delay <ms>`.
 
-**Tweet modes:** The `tweet` command has two modes:
+**Tweet modes:** The `tweet` command has two transports:
 
-- **Default (API):** X's internal GraphQL (`CreateTweet` for ≤280 chars, `CreateNoteTweet` for long-form Premium). Fast (<1s), supports `--attach` for media. Occasionally fails with error 226 when X rotates query IDs or feature flags — when that happens, recapture via `twitter-tone-research/_artifacts/scripts/capture-ct-bw.mjs` and bump the three knobs in `xclient/`.
-- **`--browser` (Patchright):** Launches a real undetected Chrome browser, opens x.com compose, types with human-style jitter, clicks Post. Supports `--attach` (image/gif/video, up to 4) — files are driven through the hidden compose input via Playwright's `setInputFiles`, no native picker dialog opens; the script waits for X's upload pipeline to finalize (up to 5 min for video) before submitting. Zero fingerprinting risk. Slower (~10s text, ~30-90s with video) but fully drift-proof — no queryIds, feature flags, or request shape to maintain. Patchright + Chromium auto-install to `~/.wonda/xclient/` on first invocation (~315 MB, one-time, shared with any Playwright install).
+- **`--via cookies` (internal API):** X's internal GraphQL (`CreateTweet` for ≤280 chars, `CreateNoteTweet` for long-form Premium). Fast (<1s), supports `--attach` for media. Occasionally fails with error 226 when X rotates query IDs or feature flags. When that happens, recapture via `twitter-tone-research/_artifacts/scripts/capture-ct-bw.mjs` and bump the three knobs in `xclient/`.
+- **`--via wab` (default for writes):** Routes through the account's WAB Chromium (auto-spawned on first `--via wab` use), opens x.com compose, types with human-style jitter, clicks Post. Supports `--attach` (image/gif/video, up to 4); files are driven through the hidden compose input via Playwright's `setInputFiles`, no native picker dialog opens; the script waits for X's upload pipeline to finalize (up to 5 min for video) before submitting. Zero fingerprinting risk. Slower (~10s text, ~30-90s with video) but fully drift-proof: no queryIds, feature flags, or request shape to maintain. Patchright + Chromium install once via `wonda wab install` (~315 MB, one-time, idempotent). Cookies live in `~/.wonda/x-cookies/<account>.json`, bound to the account's persona via `account-bindings.json`. `wonda x reply --attach` is wab-only (no cookie path).
 
 ### LinkedIn
 
 Supports search, profiles, companies, messaging, and engagement.
 
+> ⚠️ **Same anti-fraud caution as X: don't probe freshly-pasted cookies.** First request on new cookies = the actual operation, never a check. LinkedIn's anti-fraud is the most aggressive of all the platforms (force-logout, password reset, account flag). If you must verify, use `wonda linkedin auth check --account <name> --via wab` to route through the account's existing WAB session.
+
 ```bash
 # Auth setup (run `wonda linkedin auth --help` for details)
 wonda linkedin auth set --li-at-value <v> --jsessionid-value <v>
 wonda linkedin auth set --account brand-A --li-at-value <...> --jsessionid-value <...>  # multi-account
-wonda linkedin auth check
+wonda linkedin auth check                                              # raw probe, see warning above
+wonda linkedin auth check --account <name> --via wab               # safe: routes via account's WAB session
 
 # Read
 wonda linkedin me                                    # Your identity
@@ -1054,20 +1121,17 @@ wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
-wonda linkedin browser-bootstrap                     # Inject stored cookies into patchright profile (one-time + on rotation)
-wonda linkedin comments <activity-id> --browser      # Commenters with profile + vanity (daemon auto-starts if needed)
-wonda linkedin search-posts "<keyword>" --date-range past-week  # Keyword to recent posts + author profile (patchright; for social listening see content-skills/linkedin-social-listening.md)
+wonda linkedin browser-bootstrap                     # Inject stored cookies into the WAB profile (one-time + on rotation)
+wonda linkedin comments <activity-id> --account <name> --via wab  # Commenters with profile + vanity (auto-spawns WAB)
+wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (DOM scrape via WAB; for social listening see content-skills/linkedin-social-listening.md)
 
-# Daemon lifecycle (the Patchright LinkedIn daemon)
-wonda linkedin daemon start                          # Spawn detached + wait for ready (uses stored cookies)
-wonda linkedin daemon status                         # Alive? uptime, cookie age, last health probe
-wonda linkedin daemon stop                           # Graceful quit
-wonda linkedin daemon logs --follow                  # tail driver.log
+# WAB lifecycle (see `wonda wab --help` for the full surface: start/stop/status/install/bind/sync-cookies/logs)
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON)
 
 # Write
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
-wonda linkedin connect <vanity-name> -m "Hey!" --browser  # Full stealth via real browser (Patchright)
+wonda linkedin connect <vanity-name> -m "Hey!" --account <name> --via wab  # Full stealth via the account's persona
+wonda linkedin comment <activity-id> --account <name> # Add a comment (wab-only: needs SDUI render state)
 wonda linkedin like <activity-urn>                   # Like a post
 wonda linkedin unlike <activity-urn>                 # Remove a like
 wonda linkedin send-message <conversation-urn> "Hi!" # Send a message
@@ -1077,10 +1141,10 @@ wonda linkedin delete-post <activity-id>             # Delete a post
 
 Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--delay <ms>`.
 
-**Connection request modes:** The `connect` command has two modes:
+**Connection request modes:** The `connect` command has two transports:
 
-- **Default (API):** Voyager REST API with fingerprint mitigations (profile visit → drawer warm-up → connect). Fast (~3s), supports notes via `customMessage`.
-- **`--browser` (Patchright):** Drives the long-running Patchright daemon for full stealth. Daemon auto-starts on first `--browser` invocation if not already running (override with `--no-auto-start`). Zero fingerprinting risk. Slower (~10s) but fully safe. Use as a fallback when you need extra protection. Patchright + Chromium auto-install to `~/.wonda/patchright-li-driver/` on first invocation (~315 MB, one-time). Cookie pickup: daemon reads `~/.wonda/linkedin-cookies.json` (what `wonda linkedin auth set` writes) at boot and watches for updates every 5 min, so you can rotate cookies without restarting the daemon. Restarting the daemon mid-session is penalized by LinkedIn anti-fraud — use `wonda linkedin auth set` + auto-refresh instead.
+- **`--via cookies` (API):** Voyager REST API with fingerprint mitigations (profile visit, drawer warm-up, connect). Fast (~3s), supports notes via `customMessage`.
+- **`--via wab`:** Routes through the account's persona Chromium (auto-spawned) for full stealth via DOM dispatch. Zero fingerprinting risk. Slower (~10s) but fully safe. Use when you need extra protection. Patchright + Chromium install once via `wonda wab install` (~315 MB, idempotent). The persona reuses its persistent profile under `~/.wonda/wab/personas/<persona>/profile`. Cookies live in `~/.wonda/linkedin-cookies/<account>.json`, bound to the persona via `account-bindings.json`; rotating via `wonda linkedin auth set --account <name>` pushes the new cookies into the live Chromium if it's running.
 
 **Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--max-profiles N` to cap the batch (default 25 on sensitive accounts, hard ceiling 100) and `--out file.json` to write to disk.
 
@@ -1088,15 +1152,24 @@ For ICP qualification of post engagers, see `content-skills/linkedin-icp-qualify
 
 ### Reddit
 
-Auth is optional — many reads work unauthenticated. Supports search, feeds, users, posts, trending, and chat/DMs.
+Reddit's transport is fixed per command kind, so `--via` is mostly not yours to choose here:
+
+- **Reads** (search, subreddit, feed, user, user-posts, user-comments, post, trending, home) run direct via a Chrome-fingerprinted Go HTTP client (fast, ~700ms p50). Cookies only. `--via wab` is not available for reads and errors.
+- **Writes** (vote, comment, subscribe, save, unsave, delete, and subreddit `submit`) dispatch through the account's Wonda Automation Browser so the shreddit GraphQL mutations carry a real-browser signal. WAB only. `--via cookies` errors on these.
+- **Submit to a profile self-post** (`u_<handle>` / `u/<handle>`) **or a link post** goes via the tls-client (cookies) only. `--via wab` is not available for those (no DOM submit URL), so `--dry-run` (DOM-only) does not apply to them either.
+
+`--account` selects the cookie file under `~/.wonda/reddit-cookies/` (and, for writes, the account's auto-derived persona). You don't pass a persona here.
+
+> ⚠️ **Anti-fraud caution on freshly-pasted cookies.** `wonda reddit auth check` is safe (it only decodes the JWT exp locally), but the FIRST read or write you fire on new cookies hits Reddit's API from your IP / process. If those cookies were last used elsewhere (different machine, different country), Reddit's anti-fraud trips the session-theft heuristic and may force-logout the cookies. Pattern: paste cookies, go straight to the operation the user wanted. Never do a "let me just check this works" round-trip first.
 
 ```bash
 # Auth setup (run `wonda reddit auth --help` for details)
-wonda reddit auth set --session-value <jwt>
-wonda reddit auth set --account burner-1 --session-value <jwt>  # multi-account
+wonda reddit auth set --cookies "$(pbpaste)"                         # Paste full DevTools cookie: header
+wonda reddit auth set --account burner-1 --cookies "$(pbpaste)"      # Multi-account
+wonda reddit auth set --account burner-1 --from-keychain             # Opt-in: read from browser Keychain
 wonda reddit auth check
 
-# Read (works without auth)
+# Read (direct tls-client, --account picks the session for logged-in views)
 wonda reddit search "AI video" --sort top --time week   # Search posts (sort: relevance, hot, top, new, comments)
 wonda reddit subreddit marketing                        # Subreddit info
 wonda reddit feed marketing --sort hot                  # Subreddit posts (sort: hot, new, top, rising)
@@ -1105,20 +1178,23 @@ wonda reddit user-posts spez --sort top                 # User's posts
 wonda reddit user-comments spez                         # User's comments
 wonda reddit post <id-or-url> -n 50                     # Post with comments
 wonda reddit trending --sort hot                        # Popular/trending posts
+wonda reddit home --sort best                           # Your home feed (requires auth)
 
-# Read (requires auth)
-wonda reddit home --sort best                           # Your home feed
-
-# Write (requires auth)
-wonda reddit submit marketing --title "Great tool" --text "Check this out..."  # Self post
-wonda reddit submit marketing --title "Great tool" --url "https://..."         # Link post
-wonda reddit comment <parent-fullname> --text "Nice post!"                     # Reply
-wonda reddit vote <fullname> --up                       # Upvote (--down, --unvote)
-wonda reddit subscribe marketing                        # Subscribe (--unsub to unsubscribe)
-wonda reddit save <fullname>                            # Save a post or comment
-wonda reddit unsave <fullname>                          # Unsave
-wonda reddit delete <fullname>                          # Delete your post or comment
+# Write (wab-only via the account's persona; --account selects the identity)
+wonda reddit submit marketing --title "Great tool" --text "Check this..." --account burner-1   # Subreddit text post (DOM)
+wonda reddit submit u_<your-handle> --title "..." --text "..." --account burner-1               # Profile self-post (tls-client / cookies only)
+wonda reddit submit marketing --title "..." --url "https://..." --account burner-1              # Link post (tls-client / cookies only)
+wonda reddit comment t3_<post-id> --text "Nice post!" --account burner-1
+wonda reddit comment t1_<comment-id> --text "..." --post-id t3_<post-id> --account burner-1 # Nested reply (needs parent post-id)
+wonda reddit vote <fullname> --up --account burner-1     # Upvote (--down, --unvote)
+wonda reddit vote t1_<comment-id> --up --post-id t3_<post-id> --account burner-1
+wonda reddit subscribe marketing --account burner-1      # Subscribe (--unsub to unsubscribe)
+wonda reddit save <fullname> --account burner-1          # Save a post or comment (--post-id for t1_*)
+wonda reddit unsave <fullname> --account burner-1
+wonda reddit delete <fullname> --account burner-1        # Delete your own post or comment
 ```
+
+Add `--dry-run` on a subreddit `comment` or `submit` to type into the composer but not click Post (useful for review). It is DOM-only, so it does not apply to profile self-posts or link posts.
 
 Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pages`, `--delay <ms>`.
 
@@ -1149,9 +1225,9 @@ wonda reddit chat refresh                                # Force-refresh the Mat
 
 ### Brand extraction (`brand extract`)
 
-Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor, CSS pattern backgrounds, dashed/dotted border treatments, `:root` custom properties, headline emphasis pattern, film-grain/noise overlay) into a `DESIGN.md` + `tokens.json` + `assets/`. Runs locally via the bundled Patchright + Chromium driver (same Chromium cache as `wonda x tweet --browser`, `wonda linkedin connect --browser`, `wonda stealth-browser record`).
+Extract a website's design system (colors, typography, radii, shadows, spacing, fonts, logo, hero decor, CSS pattern backgrounds, dashed/dotted border treatments, `:root` custom properties, headline emphasis pattern, film-grain/noise overlay) into a `DESIGN.md` + `tokens.json` + `assets/`. Runs locally via the bundled Patchright + Chromium driver (the same `wonda wab install` as `wonda wab record` and the authenticated session flows).
 
-Requires a one-time `wonda stealth-browser install` to download Patchright + Chromium (~300 MB, shared across all four browser drivers).
+Requires a one-time `wonda wab install` to download Patchright + Chromium (~300 MB, shared across `wonda wab record`, the authenticated session flows, and `brand extract`).
 
 This is the in-house replacement for the previous `npx`-based brand-extraction CLI used in the `slide-generation` / `slide-generation-system` / `creative-static-ads` / `premium-static-ads` skills.
 
