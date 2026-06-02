@@ -54,13 +54,13 @@ A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access 
 
 Not all commands are available to every account type:
 
-| Tier                                        | Access                                                                                                                                                                                    |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Anonymous** (temporary account, no login) | Media upload/download, editing (`video/edit`, `image/edit`, `audio/edit`), transcription, social publishing, scraping, analytics                                                          |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                      |
-| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                             |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                   |
-| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. |
+| Tier                                        | Access                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anonymous** (temporary account, no login) | Media upload/download, transcription, social publishing, scraping, analytics. Editing ops (`wonda edit video/image/audio`) render locally via ffmpeg (no render credits); media download/upload still use the API.                                                                                                                                                     |
+| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                                                                                                                                                                                                   |
+| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                                                                                                                                                                                          |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                                                                                                                                                                                                |
+| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. `wonda compose motion`/`wonda compose text` render hyperframes HTML compositions locally (requires Node >= 22 + ffmpeg, no API call). `wonda doctor` verifies prerequisites. |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
 
@@ -145,6 +145,14 @@ All commands support these output control flags:
 - `-o <path>` — Download output to file (implies `--wait`)
 - `--fields status,outputs` — Select specific JSON fields
 - `--jq '.outputs[0].media.url'` — Filter JSON output with a jq expression
+
+### CLI announcements & deprecation warnings
+
+On every command the CLI polls `GET /api/v1/updates` (anonymous, 1h cache in `~/.wonda/state.json`) for active announcements: deprecation notices, incident heads-ups, upgrade prompts. Messages are printed to stderr only, so stdout/JSON stays clean for piping.
+
+Per-request deprecation hints arrive as the standard `Warning: 299 - "<message>"` HTTP header and are surfaced to stderr by the CLI's HTTP client as `[deprecated METHOD /path] <message>`.
+
+Silence both channels with `WONDA_QUIET=1` (env var) or `--quiet` (flag). Disable just the network checks with `WONDA_NO_UPDATE_CHECK=1`.
 
 ### WAB / Wonda Automation Browser (`wonda wab`)
 
@@ -334,7 +342,9 @@ Font rule for local caption/text work:
 - Prefer an explicit font file path over a family name.
 - Never assume a font exists. Check first with `fc-match`, `fc-list`, `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`, or `/usr/share/fonts`.
 - If the task is mainly local finishing/captions/formatting/splitting/artifact extraction, check the `ffmpeg` skill before inventing commands.
-- `wonda edit video` renders locally for every single-video op (`trim`, `crop`, `speed`, `volume`, `textOverlay`, `animatedCaptions` with supplied captions, `editAudio`). No flag needed: the server returns a manifest, the CLI renders it, uploads the output, and finalizes the editor_job. Multi-video ops (`overlay`, `splitScreen`, `splitScenes`, `motionDesign`, `merge`) are not handled by `wonda edit video`. Build them locally with the `ffmpeg` skill instead (concat, overlay, hstack/vstack, scene assembly). **Never mix per-clip audio then concat** — concat the video tracks first, then layer the full voiceover or music track once over the joined timeline. Per-clip audio bakes create cut-line collisions and silent gaps.
+- `wonda edit video` runs a **local ffmpeg** for every editor op: `trim`, `crop`, `volume`, `speed`, `reverseVideo`, `extractFrame`, `extractAudio`, `editAudio`, `imageCrop`, `imageToVideo`, `merge`, `overlay`, `splitScreen`, `splitScenes`, `skipSilence`. The render runs on your machine via ffmpeg: no server-side `editor_job` and no credit hold for the render itself (inputs are downloaded and the result uploaded around it). `textOverlay` and `animatedCaptions` also run locally, via the bundled hyperframes (Chromium) renderer. ffmpeg must be on PATH (`wonda doctor` verifies). The public API `/video/edit`, `/image/edit`, `/audio/edit` are no longer used for these and return 410 Gone.
+- **Always merge clips locally.** Server-side merge can hang for 30+ minutes once any input exceeds ~7MB, and `wonda edit video --operation merge` now runs in local ffmpeg by default for the same reason.
+- **Never mix per-clip audio then concat.** Concat the video tracks first, then layer the full voiceover or music track once over the joined timeline. Per-clip audio bakes create cut-line collisions and silent gaps.
 
 Default local export target unless the user asked otherwise:
 
@@ -343,6 +353,69 @@ Default local export target unless the user asked otherwise:
 ```
 
 Always pass `-y` as the first flag so the command auto-overwrites the output. `ffmpeg` prompts interactively when the output path exists and agent shells hang on that prompt until timeout.
+
+### Step 2.6: Pick the right local tool
+
+Editing maps to one of four tools. Pick the first row that matches.
+
+| Need                                                         | Tool                                                                   | Why                                                                                              |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Primitive transform (trim, crop, speed, merge, overlay, ...) | `wonda edit video --operation <op>`                                    | Wraps local ffmpeg. Free, deterministic, renders on your machine (no server render, no credits). |
+| Motion graphics, animated text, lower thirds, intro/outro    | `wonda compose <kind>` (hyperframes HTML compositions, local render)   | One-shot, no Lambda, no Node bundled into wonda. Requires Node >= 22 + ffmpeg.                   |
+| Kinetic captions, branded effects pipelines, scene FX        | `wonda transitions run --preset <name>` (miruna's transitions service) | Hosted; richer effect library (SAM3 masking, scene transitions, caption presets).                |
+| One-off raw transform not covered by a primitive             | Raw `ffmpeg` via Bash (see the `ffmpeg` skill)                         | Faster than picking a wrong primitive; matches "deterministic transform on local files".         |
+| Complex multi-step pipeline                                  | Chain the above (`wonda edit ...` → raw ffmpeg → `wonda compose ...`)  | Each step writes a local mp4; pass it as `--input` / `--media` to the next.                      |
+
+Run `wonda doctor` once on a new machine to confirm ffmpeg, node, and hyperframes are all available. Pass `--warm-chrome` to pre-fetch hyperframes' bundled Chromium (~150 MB) so the first clipping render doesn't pause to download it.
+
+**Examples:**
+
+Primitive trim and merge (wonda edit, local ffmpeg):
+
+```bash
+wonda edit video --operation trim --media $VID \
+  --params '{"trimStartMs":3000,"trimEndMs":10000}' \
+  --wait -o ./trimmed.mp4
+
+wonda edit video --operation merge --media $A,$B,$C \
+  --wait -o ./merged.mp4
+```
+
+Motion graphics intro (wonda compose, hyperframes):
+
+```bash
+wonda compose motion --template fade-in \
+  --text "Q4 Recap" --subtitle "Wondercat" \
+  --duration 4 --resolution portrait -o intro.mp4
+
+wonda compose text --input ./clip.mp4 --text "NEW DROP" \
+  --position bottom-center -o overlay.mp4
+```
+
+Kinetic captions on a finished clip (transitions service):
+
+```bash
+wonda transitions run --media $VID --preset caption_word_pop --wait -o final.mp4
+```
+
+Raw ffmpeg for an op no primitive covers (e.g. concat with audio fade out):
+
+```bash
+ffmpeg -y -f concat -safe 0 -i list.txt \
+  -af "afade=out:st=29:d=1" \
+  -c:v libx264 -crf 18 -pix_fmt yuv420p \
+  -c:a aac -b:a 192k out.mp4
+```
+
+Multi-step pipeline (compose intro → wonda merge with main → transitions captions):
+
+```bash
+wonda compose motion --template scale-pop --text "Hello" --duration 3 -o intro.mp4
+wonda edit video --operation merge --media $(wonda media upload intro.mp4 --quiet),$MAIN_VID \
+  --wait -o merged.mp4
+MERGED_ID=$(wonda media upload merged.mp4 --quiet)
+wonda transitions run --media $MERGED_ID --preset caption_word_pop --wait -o final.mp4
+```
 
 ### Step 3: Build from scratch (chain endpoints)
 
@@ -738,7 +811,7 @@ wonda edit video --operation textOverlay \
   --params '{"text":"YOUR HEADLINE"}' --wait -o ./out.mp4
 ```
 
-Image `textOverlay` renders server-side; video `textOverlay` renders locally. No flag needed in either case.
+`textOverlay` renders locally via the bundled hyperframes (Chromium) renderer. There is no server-side image `textOverlay` anymore.
 
 **Font sizing guide:**
 
@@ -824,23 +897,26 @@ File order in `concat.txt` = playback order. See the `ffmpeg` skill for the full
 
 ### Split scenes / keep a specific scene
 
-Two modes — pick by intent:
+Two modes, pick by intent:
 
 ```bash
-# Keep a specific scene (split mode) — splits into scenes, auto-selects one
+# Split mode (default) — returns EVERY detected scene as its own media.
+# JSON output lists each scene under scenes[] ({mediaId,index,startS,endS}).
 wonda edit video --operation splitScenes --media $VID_MEDIA \
-  --params '{"mode":"split","threshold":0.5,"minClipDuration":2,"outputSelection":"last"}' \
-  --wait -o last-scene.mp4
-# outputSelection: "first", "last", or 1-indexed number (e.g. 2 for second scene)
+  --params '{"mode":"split","threshold":0.5,"minClipDuration":2}' --json
+# With -o, each scene downloads to a numbered file (out-1.mp4, out-2.mp4, ...);
+# a single detected scene writes the path verbatim.
+wonda edit video --operation splitScenes --media $VID_MEDIA \
+  --params '{"mode":"split","threshold":0.5,"minClipDuration":2}' -o scenes.mp4
 
-# Remove a scene (omit mode) — removes one scene, merges the rest
+# Remove a scene (omit mode) — removes one scene, merges the rest into one file.
 wonda edit video --operation splitScenes --media $VID_MEDIA \
   --params '{"mode":"omit","threshold":0.5,"minClipDuration":2,"outputSelection":"first"}' \
   --wait -o without-first.mp4
-# outputSelection: which scene to REMOVE
+# outputSelection (omit mode only): "first", "last", or a 1-indexed number = which scene to REMOVE
 ```
 
-Use omit mode for "remove frozen first frame" (common with Sora videos). Use split mode for "keep just scene X".
+Use omit mode for "remove frozen first frame" (common with Sora videos). Use split mode to get all scenes as separate clips.
 
 ### Image editing
 
@@ -889,13 +965,15 @@ and the CLI downloads each rendered clip + a `plan.json`.
 Auth: requires the `clippingEnabled` PostHog feature flag in prod; local
 dev bypasses automatically.
 
-**Source — never pass YouTube URLs to `--url`.** The flag exists on the
-CLI but the underlying `--url` flow shells out to `yt-dlp` on the
-**video-worker container** (Cloud Run / GCP datacenter IP). YouTube
-blocks datacenter IPs with the "Sign in to confirm you're not a bot"
-challenge and the worker has no cookie store, so YouTube ingest fails
-at progress 0.05 with that error and the LLM hold has to be released.
-For YouTube, always download locally and upload first:
+**Source: `--url` accepts YouTube and direct mp4 URLs.**
+
+```bash
+wonda clipping --url "<youtube-url>" --brief "the most controversial moments" --wait
+```
+
+YouTube links work; a long video can take several minutes to ingest before
+transcription starts. If a YouTube ingest fails, download the file locally
+and upload it first, then clip with `--media`:
 
 ```bash
 yt-dlp -o /tmp/source.mp4 \
@@ -903,8 +981,6 @@ yt-dlp -o /tmp/source.mp4 \
   --merge-output-format mp4 "<youtube-url>"
 MEDIA=$(wonda media upload /tmp/source.mp4 --quiet)
 ```
-
-`--url` is fine for **direct mp4 URLs** (no JS, no anti-bot cookies).
 
 ```bash
 # Plan only — fast, no render
@@ -972,22 +1048,28 @@ Job-status shape (returned by GET `/api/v1/clipping/jobs/{id}`):
 
 ## Editor operations reference
 
-| Operation          | Inputs                      | Key Params                                                                    |
-| ------------------ | --------------------------- | ----------------------------------------------------------------------------- |
-| `animatedCaptions` | video_0                     | fontFamily, position, sizePercent, fontSizeScale, strokeWidth, highlightColor |
-| `textOverlay`      | video_0 + prompt            | fontFamily, position, sizePercent, fontSizeScale, strokeWidth                 |
-| `editAudio`        | video_0 + audio_0           | videoVolume (0-100), audioVolume (0-100)                                      |
-| `merge`            | video_0..video_4            | Handle order = playback order                                                 |
-| `overlay`          | video_0 (bg) + video_1 (fg) | position, resizePercent                                                       |
-| `splitScreen`      | video_0 + video_1           | targetAspectRatio (16:9 or 9:16)                                              |
-| `trim`             | video_0                     | trimStartMs, trimEndMs (milliseconds)                                         |
-| `splitScenes`      | video_0                     | mode (split/omit), threshold, outputSelection                                 |
-| `speed`            | video_0                     | speed (multiplier: 2 = 2x faster)                                             |
-| `extractAudio`     | video_0                     | Extracts audio track                                                          |
-| `reverseVideo`     | video_0                     | Plays backwards                                                               |
-| `skipSilence`      | video_0                     | maxSilenceDuration (default 0.03)                                             |
-| `imageCrop`        | video_0                     | aspectRatio                                                                   |
-| `textOverlay`      | video_0 (image)             | Same as video textOverlay — works on images, outputs image (png/jpg)          |
+| Operation          | Inputs                      | Key Params                                                                                                 |
+| ------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `animatedCaptions` | video_0                     | fontFamily, position, sizePercent, fontSizeScale, strokeWidth, highlightColor                              |
+| `textOverlay`      | video_0 + prompt            | fontFamily, position, sizePercent, fontSizeScale, strokeWidth                                              |
+| `editAudio`        | video_0 + audio_0           | videoVolume (0-100), audioVolume (0-100)                                                                   |
+| `merge`            | video_0..video_4            | Handle order = playback order                                                                              |
+| `overlay`          | video_0 (bg) + video_1 (fg) | position, resizePercent                                                                                    |
+| `splitScreen`      | video_0 + video_1           | targetAspectRatio (16:9 or 9:16)                                                                           |
+| `trim`             | video_0                     | trimStartMs, trimEndMs (milliseconds)                                                                      |
+| `crop`             | video_0                     | aspectRatio (16:9/9:16/1:1/4:5/21:9/custom) OR cropPercent+cropAxis. Ratio/percent based, NOT pixel coords |
+| `volume`           | video_0                     | volume (0-100) or muted                                                                                    |
+| `speed`            | video_0                     | speed (multiplier: 2 = 2x faster)                                                                          |
+| `extractFrame`     | video_0                     | timestampMs or timestampPercent (outputs an image)                                                         |
+| `extractAudio`     | video_0                     | Extracts audio track (outputs mp3)                                                                         |
+| `reverseVideo`     | video_0                     | Plays backwards                                                                                            |
+| `splitScenes`      | video_0                     | mode (split returns all scenes / omit returns one merged file), threshold, outputSelection (omit only)     |
+| `skipSilence`      | video_0                     | maxSilenceDuration (default 0.03)                                                                          |
+| `audioTrim`        | audio_0                     | trimStartMs, trimEndMs (milliseconds)                                                                      |
+| `imageCrop`        | image_0                     | cropPixelX, cropPixelY, cropPixelWidth, cropPixelHeight (exact pixel rectangle)                            |
+| `textOverlay`      | video_0 (image)             | Same as video textOverlay — works on images, outputs image (png/jpg)                                       |
+
+> **`crop` vs `imageCrop`:** video `crop` is **ratio/percent** based (`aspectRatio` or `cropPercent`+`cropAxis`); it does NOT take pixel coordinates and rejects `cropPixelX/Y/Width/Height` with an error. For an **exact pixel rectangle**, use `imageCrop`. Run `wonda operations info <operation>` for the full param list, defaults, and ranges of any op.
 
 Valid textOverlay fonts: Inter, Montserrat, Bebas Neue, Oswald, TikTok Sans, TikTok Sans Condensed, TikTok Sans SemiCondensed, TikTok Sans SemiExpanded, TikTok Sans Expanded, TikTok Sans ExtraExpanded, Nohemi, Poppins, Raleway, Anton, Comic Cat, Gavency
 Valid positions: top-left, top-center, top-right, center-left, center, center-right, bottom-left, bottom-center, bottom-right
@@ -1120,6 +1202,8 @@ wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
+wonda linkedin connection-status johndoe janedoe     # Per-member: connected / pending (in|out) / not_connected (cookie-only)
+wonda linkedin saves                                 # Your saved posts (My Items → Saved posts; --all, --enrich for likes/comments)
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into the WAB profile (one-time + on rotation)
 wonda linkedin comments <activity-id> --account <name> --via wab  # Commenters with profile + vanity (auto-spawns WAB)
@@ -1150,11 +1234,48 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 
 For ICP qualification of post engagers, see `content-skills/linkedin-icp-qualify.md`.
 
+### Instagram
+
+A first-class platform with three transports selected by `--via`, the same legitimacy gradient as the others:
+
+- `--via api` — official Graph API via your connected OAuth account (`--connection`). ToS-safe, used for publishing.
+- `--via cookies` — private mobile API via the local cookie `--account`. Used for reads (saved posts, comments).
+- `--via wab` — browser DOM via the account's Wonda Automation Browser persona. Used for the `comment` write (drives the reel's inline comment composer with a real-browser fingerprint, the same stealth path X reply / LinkedIn comment use).
+
+Transports are per-operation capabilities: `saved` and `comments` are cookies-only (no Graph endpoint for them), `post`/`carousel` are api-only, and `comment` is wab-only. The two identities are distinct: `--account`/`--sessionid` = the local cookie identity; `--connection` = the OAuth `instagram_account` UUID. For `--via wab` the persona is auto-derived from `--account` (or pass `--persona` directly); the WAB injects the bound account's `sessionid` (+ `ds_user_id`) into the Chromium cookie jar at spawn.
+
+> ⚠️ **Same anti-fraud caution as the others: don't probe freshly-pasted cookies.** The first request on a new `sessionid` should be the operation you wanted. Instagram flags burst activity from a new IP/process on a freshly-handed session.
+
+```bash
+# Auth setup — local cookie identity (run `wonda instagram auth --help` for details)
+wonda instagram auth set --sessionid <value>                # Just the sessionid cookie (simplest)
+wonda instagram auth set --cookies "$(pbpaste)"             # Full DevTools cookie: header (also captures ds_user_id)
+wonda instagram auth set --account burner --sessionid <v>   # Multi-account
+wonda instagram auth set --account burner --sessionid <v> --persona burner  # Also bind to a WAB persona
+
+# Read (cookies)
+wonda instagram saved                                       # Your saved posts (--all to walk all pages)
+wonda instagram saved --jq '.posts[] | {authorHandle, url}' # Project fields out of the result
+wonda instagram comments https://instagram.com/reel/<code>/ # A post/reel's comments (--all to walk all pages)
+wonda instagram comments <code> --jq '.comments[] | {authorHandle, text}'  # Bare shortcode also works
+
+# Publish (--via api, default — the official Graph API via your connected account)
+wonda instagram post --media <media-id> --caption "Hello"   # Single image/reel
+wonda instagram post --media <id> --connection <ig-uuid>    # Pick the connected account explicitly
+wonda instagram carousel --media <id1> --media <id2>        # 2-10 image carousel
+
+# Comment on a reel (--via wab only — drives the inline composer in the WAB)
+wonda instagram comment https://instagram.com/reel/<code>/ "Great reel!" --persona my-account
+wonda instagram comment <code> "Love this" --persona my-account   # Bare shortcode also works
+```
+
+`--account` selects the cookie file under `~/.wonda/instagram-cookies/<account>.json`. For `saved`, carousels contribute every child's media URL (videos win over images for the per-item URL); pagination uses the `max_id` cursor (`--cursor`, `--all`, `--max-pages`, `--delay <ms>`). `comments` takes a `/p/<code>/` or `/reel/<code>/` URL (or a bare shortcode), decodes it to the numeric media id locally, then pages the same `max_id` cursor; the result carries each comment's `id`, `text`, `authorHandle`, `authorName`, `createdAt`, `likeCount`, `replyCount` plus the parent media's total `commentCount`. For posting, `wonda instagram post --via api` and `wonda publish instagram` share the same Graph-API path. `comment` (write) takes a `/reel/<code>/` or `/p/<code>/` URL (or bare shortcode) plus the text, and is wab-only: it auto-spawns the persona's WAB if needed, types into the inline composer, submits, and writes a `comment` audit row to `~/.wonda/wab/audit.jsonl` (failures fire `wab_action_failed` telemetry and drop a failure bundle).
+
 ### Reddit
 
 Reddit's transport is fixed per command kind, so `--via` is mostly not yours to choose here:
 
-- **Reads** (search, subreddit, feed, user, user-posts, user-comments, post, trending, home) run direct via a Chrome-fingerprinted Go HTTP client (fast, ~700ms p50). Cookies only. `--via wab` is not available for reads and errors.
+- **Reads** (search, subreddit, feed, user, user-posts, user-comments, post, trending, home, saved) run direct via a Chrome-fingerprinted Go HTTP client (fast, ~700ms p50). Cookies only. `--via wab` is not available for reads and errors.
 - **Writes** (vote, comment, subscribe, save, unsave, delete, and subreddit `submit`) dispatch through the account's Wonda Automation Browser so the shreddit GraphQL mutations carry a real-browser signal. WAB only. `--via cookies` errors on these.
 - **Submit to a profile self-post** (`u_<handle>` / `u/<handle>`) **or a link post** goes via the tls-client (cookies) only. `--via wab` is not available for those (no DOM submit URL), so `--dry-run` (DOM-only) does not apply to them either.
 
@@ -1179,6 +1300,7 @@ wonda reddit user-comments spez                         # User's comments
 wonda reddit post <id-or-url> -n 50                     # Post with comments
 wonda reddit trending --sort hot                        # Popular/trending posts
 wonda reddit home --sort best                           # Your home feed (requires auth)
+wonda reddit saved                                      # Your saved posts + comments (requires auth; --all to walk all pages)
 
 # Write (wab-only via the account's persona; --account selects the identity)
 wonda reddit submit marketing --title "Great tool" --text "Check this..." --account burner-1   # Subreddit text post (DOM)
@@ -1220,6 +1342,35 @@ wonda reddit chat refresh                                # Force-refresh the Mat
 ```
 
 **Important**: The chat token expires every ~24h. The CLI auto-refreshes on use, but if it expires fully, re-run `auth-set`. Rate limit DM sends to 15-20/day with varied text to avoid detection. The `send` command includes a typing delay (1-5s) to mimic human behavior.
+
+### Cloud digital twins (`wonda twin`)
+
+Manage cloud-hosted social personas that run behind mobile proxies. Sessions are server-side; schedules drive recurring tasks (saved-content sync, engagement, agent runs) on a cron.
+
+```bash
+# Sessions
+wonda twin list                                          # List twin sessions
+wonda twin show <persona>                                # Show one session
+wonda twin provision <persona> --region GB               # Provision (flags: --provenance, --spend-cap <microdollars>, --allow <cmd> (repeatable))
+wonda twin pause <persona>                               # Pause a session
+wonda twin resume <persona>                              # Resume a paused session
+wonda twin needs-auth <persona>                          # Flag a session as needing re-auth
+
+# Schedules
+wonda twin schedule list --persona <persona>             # List schedules (--persona optional)
+wonda twin schedule add <persona> --cron "0 9 * * *" --kind saved_sync   # Add (--kind: saved_sync|engage|agent; --command, --prompt, --mode deterministic|agent)
+                                                         # --jitter-window-seconds N: fire once/day at a random-looking minute within N seconds AFTER the cron time (the cron marks the window start); 0/omitted = fire exactly at the cron minute
+                                                         # --output-webhook <url>: deliver each run's captured command stdout to your HTTPS webhook (payload carries a short-TTL signed download URL); --output-webhook-secret <s>: HMAC-SHA256 key signing the body via the X-Wonda-Signature header
+wonda twin schedule enable <id>                          # Enable a schedule
+wonda twin schedule disable <id>                         # Disable a schedule
+wonda twin schedule rm <id>                              # Delete a schedule
+
+# Runs & feed
+wonda twin runs --persona <persona> --limit 20           # Recent runs
+wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately
+wonda twin output <runId>                                # Fetch a run's captured command output (--url prints just the short-TTL signed download URL)
+wonda twin feed --platform <platform> --limit 20         # Saved content collected by twins
+```
 
 ## Workflow & discovery
 
