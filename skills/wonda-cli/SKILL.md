@@ -1365,11 +1365,10 @@ wonda twin schedule enable <id>                          # Enable a schedule
 wonda twin schedule disable <id>                         # Disable a schedule
 wonda twin schedule rm <id>                              # Delete a schedule
 
-# Runs & feed
+# Runs
 wonda twin runs --persona <persona> --limit 20           # Recent runs
 wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately
 wonda twin output <runId>                                # Fetch a run's captured command output (--url prints just the short-TTL signed download URL)
-wonda twin feed --platform <platform> --limit 20         # Saved content collected by twins
 ```
 
 ## Workflow & discovery
