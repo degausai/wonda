@@ -35,6 +35,29 @@ by switching context:
   `X-Wonda-Org` on every request; holds, charges, and `wonda balance`
   route through the org wallet.
 - `wonda use --personal` — back to personal.
+- `wonda usage` — spend-only usage summary (total + per-model + per-project
+  breakdown) for a period (`--month 2026-05`, or `--from`/`--to`; defaults
+  to the current month, UTC). `--project <name>` restricts the report to one
+  project. In org context it reports org-wide usage including a per-member
+  breakdown — admin/owner role required. Admins can also download a full
+  Excel report from the org page on the web.
+
+### Projects (spend tagging)
+
+Projects attribute spend to a named workstream for monitoring. Agents
+should check the active project at task start (`wonda use` prints it) and
+set one per task when the operator monitors spend by project:
+
+- `wonda use --project <name>` — sticky: every subsequent charge carries
+  the project (in `wonda usage`, the API, and the org Excel report).
+  `wonda use --no-project` stops tagging; switching org/personal context
+  clears the project automatically (projects are per-scope).
+- `--project <name>` on any command — one-off override for that invocation.
+- `wonda project list|create|delete` — manage the registry in the active
+  scope. Org projects are created by org admins/owners only; personal
+  projects are self-service. Tagging against a name that doesn't exist
+  fails with `unknown_project` (no silent new buckets, so typos can't
+  split the monitoring data).
 
 `wonda topup` always tops up your **personal** wallet, regardless of
 context. Topping up the org wallet (and configuring auto top-up) is
@@ -59,7 +82,7 @@ Not all commands are available to every account type:
 | **Anonymous** (temporary account, no login) | Media upload/download, transcription, social publishing, scraping, analytics. Editing ops (`wonda edit video/image/audio`) render locally via ffmpeg (no render credits); media download/upload still use the API.                                                                                                                                                     |
 | **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                                                                                                                                                                                                   |
 | **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                                                                                                                                                                                          |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled). Flip the flag in PostHog for the account.                                                                                                                                                                                                                                                |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled), `wonda reddit signup` (redditAccountCreationEnabled). Flip the flag in PostHog for the account.                                                                                                                                                                                          |
 | **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. `wonda compose motion`/`wonda compose text` render hyperframes HTML compositions locally (requires Node >= 22 + ffmpeg, no API call). `wonda doctor` verifies prerequisites. |
 
 If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
@@ -163,12 +186,14 @@ The Wonda Automation Browser (WAB) is a premium stealth antidetect browser, hard
 
 The mental model: you have **accounts** (one identity per platform). Each platform command routes to that account's cookies via either the flat JSON store (`--via cookies`, fast, no Chromium) or the account's **persona** (`--via wab`, live antidetect Chromium). A persona is the Chromium envelope that can hold multiple accounts under one fingerprint. In almost every case the persona is auto-created on first `--via wab` use, named after the account, so you never type a persona name.
 
+**Native login is the default for a new persona.** `wonda wab login <persona> <platform>` opens a headful WAB window and you log in there. The session is minted INSIDE the WAB, so it is independent (logging out of the same account in an unrelated Chrome cannot revoke it) and the cookies are born under the WAB's own fingerprint, so session and browser identity stay coherent. A brand-new persona auto-created on first `--via wab` use chains straight into this flow on a TTY. Pasting cookies from another browser (`wonda linkedin auth set`, `wonda x auth set`, ...) still works and is the explicit fallback, but a hand-pasted `li_at` on a novel WAB fingerprint is the highest-risk shape.
+
 ```bash
 wonda wab install                             # one-time: npm install + patchright chromium (shared by sessions, record, brand extract)
 wonda wab start [account]                     # spawn (offscreen by default; --visible to show)
 wonda wab stop [account]                      # graceful shutdown
 wonda wab status                              # list personas + last activity
-wonda wab login <account> <linkedin|x|reddit> # open headful window, user logs in, cookies persist
+wonda wab login <account> <linkedin|x|reddit> # RECOMMENDED for a new persona: open headful window, user logs in, session minted in-WAB (independent + fingerprint-coherent)
 wonda wab check <account> <linkedin|x|reddit> # non-interactive session-alive probe
 wonda wab bind <persona> --x <acct> --reddit <acct> --linkedin <acct>  # multi-account power-user path: bind N accounts to ONE persona
 wonda wab record <url>                        # anonymous one-shot capture (no account, no cookies), see below
@@ -189,7 +214,11 @@ wonda wab backup push [account]               # one-shot manual push for all pla
 wonda wab backup pull [account]               # restore cloud cookies → ~/.wonda/<platform>-cookies/<account>.json on a fresh machine
 wonda wab backup list                         # inventory of cloud backups (metadata only)
 wonda wab backup delete <plat> <persona> [acct] # remove one backup
+wonda wab config set <persona> <key> <value>  # persist per-persona spawn defaults (idle-timeout, locale, visible, interactive, proxy_url, timezone, geo_lat/lon)
+wonda wab config get <persona>                # print a persona's persisted config
 ```
+
+**Local browser proxy (`proxy_url`).** By default the local WAB dials direct (your own IP). Set `wonda wab config set <persona> proxy_url managed` to route the LOCAL browser through your account's minted twin proxy, so it shares the same egress as the cloud twin (useful for IP continuity or a VPN/office/CGNAT network). A literal `socks5://…`/`https://…` value is a manual override instead; unset clears it back to direct. The proxy is optional: if minting is disabled for the environment or unavailable, the browser falls back to a direct dial.
 
 Lifecycle commands take an `--account` (e.g. `wonda wab login mathieu linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
 
@@ -231,6 +260,50 @@ Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platfor
 - `~/.wonda/linkedin-cookies/<account>.json` (auto-migrated from the legacy single-file format)
 
 Pass `--account <name>` to `auth set` to keep multiple logins side-by-side. The binding is recorded against the account's persona in `account-bindings.json` and, if the persona's Chromium is running, the rotated cookies get pushed into the live context. The driver also syncs cookies back to disk every 10 minutes (and on graceful shutdown), so rotated cookies (ct0 cycles, token_v2 server-side refresh, etc.) flow back to the cookies path without manual re-paste.
+
+### Action rate limits
+
+Every platform command (`linkedin`, `x`, `reddit`, `instagram`), reads AND writes, runs through a per-profile rate-limit guard so a burst doesn't trip a platform's shadow-ban / anti-abuse heuristics. Accounting is per `(platform, account)` in a rolling 24h window, logged per profile under `~/.wonda/wab/personas/<persona>/` (so a cloud twin's caps persist across runs).
+
+- **Reads** are _paced_, never blocked: spacing is jittered to keep a profile under `read_per_min` (75/min default), holding across separate invocations.
+- **Writes** are checked against per-bucket daily caps. The LinkedIn defaults (other platforms track + count toward the total/day but have no per-type write cap by default):
+
+  | bucket                   | commands                   | safe        | max |
+  | ------------------------ | -------------------------- | ----------- | --- |
+  | outreach                 | `connect` + `send-message` | 20          | 40  |
+  | post                     | `post`                     | 3           | 5   |
+  | comment                  | `comment`                  | 10          | 20  |
+  | react                    | `like`                     | 25          | 50  |
+  | search                   | `search`, `search-posts`   | 25          | 50  |
+  | **total** (all non-read) | any of the above           | warn at 90% | 100 |
+
+Caps are **SOFT by default**: an over-safe / over-max action prints a shadow-ban-risk warning to stderr and **proceeds**. Pass `--hard` (or set `mode: hard` in config) to make over-cap writes **abort** (exit 1) instead.
+
+`wonda actions` is a JSON data query (not a dashboard) for reading a profile's rolling-24h usage vs caps on demand; the caps/pacing/warnings run silently in the live hook regardless.
+
+```bash
+wonda actions                        # rolling-24h usage per profile vs caps, as JSON
+wonda actions --persona natty        # one profile
+wonda actions --platform linkedin    # filter to one platform
+wonda actions sync                   # flush local action/health events to your Wonda account
+wonda actions sync --persona natty   # flush one profile's ledgers
+wonda linkedin post "…" --hard       # enforce caps as hard limits for this command
+```
+
+When an API key is configured, the local ledgers (actions log, WAB audit/error logs, cookie provenance) also sync to your Wonda account-health record automatically in the background on every command: best-effort, batched, and idempotent (a stable client event id per record means retries never double count), so offline use keeps working and sync catches up later. `wonda actions sync` forces a full flush and prints the server's insert/dedup counts; without an API key it is a silent no-op. Only event metadata travels, never cookie values or failure bundles. `WONDA_TELEMETRY_DISABLED=1` turns the background sync off.
+
+Override / disable / hard-mode via `~/.wonda/config.json` under `action_limits` (caps are clamped to safety floors/ceilings so an override can loosen but not silently disable the guard):
+
+```json
+{
+  "action_limits": {
+    "mode": "hard",
+    "read_per_min": 75,
+    "total_per_day": 100,
+    "buckets": { "linkedin": { "outreach": { "safe": 15, "max": 30 } } }
+  }
+}
+```
 
 ### Config keys
 
@@ -482,34 +555,6 @@ wonda edit video --operation animatedCaptions --media $VID_MEDIA \
 ```
 
 The video's original audio is preserved. Do NOT replace the audio with TTS — Sora already generated the speech.
-
-**Alternative engine: `--captions-engine ffmpeg`.**
-
-Use when the user wants the typewriter look or an opaque/rounded chyron behind the active word. Plain `brew install ffmpeg` is enough. This path is CLI-only today (it does not go through `editor_job`, so credits are not charged for the render).
-
-```bash
-# progressive (default for ffmpeg engine) — cumulative reveal,
-# optional rounded pill behind the active word via highlightColor.
-wonda edit video --operation animatedCaptions \
-  --captions-engine ffmpeg --captions-preset progressive \
-  --media $VID_MEDIA \
-  --caption-segments "$(echo "$STT_OUT" | jq -c '.outputs[] | select(.outputKey=="wordTimestamps") | .outputValue | map({text: .word, startS: .start})')" \
-  --params '{"fontFamily":"TikTok Sans","textColor":"#FFFFFF","strokeColor":"#000000","strokeWidth":3,"fontSizeScale":1.1,"paddingBottom":25,"highlightColor":"#FF3D3D","backgroundBorderRadius":18}' \
-  -o final.mp4
-
-# typewriter — letters appear one at a time at constant interval (60ms/char)
-# with a square white caret. Pass plain white text (no background).
-wonda edit video --operation animatedCaptions \
-  --captions-engine ffmpeg --captions-preset typewriter \
-  --media $VID_MEDIA \
-  --caption-segments "$STT_WORD_TIMESTAMPS" \
-  --params '{"fontFamily":"TikTok Sans","textColor":"#FFFFFF","fontSizeScale":1.1,"paddingBottom":12}' \
-  -o final.mp4
-```
-
-Fonts are bundled into the binary, so the standard `fontFamily` values (TikTok Sans variants, Nohemi, Comic Cat, Gavency) work out of the box with no extra setup. `--fonts-dir` is an optional override for power users who want to bring their own font collection: when set, the renderer searches that directory first and only falls back to the bundled set if it doesn't find a match.
-
-Vertical placement is controlled by `paddingBottom` (a percentage of canvas height, distance from canvas bottom to the caption's bottom edge). Sensible values: `12` for traditional bottom-of-frame subtitles, `25` for the TikTok 3/4-from-top sweet spot, `35` for visibly mid-bottom. `paddingTop` does the same when `position` starts with `top-*`. Without these, captions snap to the very edge of the canvas.
 
 **Transitions (effects pipelines on a single video):**
 
@@ -1168,6 +1213,7 @@ wonda x retweet <tweet-id-or-url>                    # Retweet
 wonda x unretweet <tweet-id-or-url>                  # Unretweet
 wonda x follow @handle                               # Follow
 wonda x unfollow @handle                             # Unfollow
+wonda x feed-engage --authors "a,b" --duration 5m    # Scroll the feed and like posts from these authors (wab-only)
 
 # Maintenance
 wonda x refresh-ids                                  # Refresh cached GraphQL query IDs from X's JS bundles
@@ -1192,6 +1238,7 @@ wonda linkedin auth set --li-at-value <v> --jsessionid-value <v>
 wonda linkedin auth set --account brand-A --li-at-value <...> --jsessionid-value <...>  # multi-account
 wonda linkedin auth check                                              # raw probe, see warning above
 wonda linkedin auth check --account <name> --via wab               # safe: routes via account's WAB session
+wonda linkedin auth status --account <name>                        # local-only: cookie provenance (login vs paste) + 429-risk, never probes
 
 # Read
 wonda linkedin me                                    # Your identity
@@ -1221,6 +1268,7 @@ wonda linkedin unlike <activity-urn>                 # Remove a like
 wonda linkedin send-message <conversation-urn> "Hi!" # Send a message
 wonda linkedin post "Excited to announce..."         # Create a post
 wonda linkedin delete-post <activity-id>             # Delete a post
+wonda linkedin feed-engage --authors "a,b" --duration 5m  # Scroll the feed and like posts from these authors (wab-only)
 ```
 
 Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--delay <ms>`.
@@ -1267,6 +1315,9 @@ wonda instagram carousel --media <id1> --media <id2>        # 2-10 image carouse
 # Comment on a reel (--via wab only — drives the inline composer in the WAB)
 wonda instagram comment https://instagram.com/reel/<code>/ "Great reel!" --persona my-account
 wonda instagram comment <code> "Love this" --persona my-account   # Bare shortcode also works
+
+# Feed-engage (--via wab only: scroll the home feed and like target authors' posts)
+wonda instagram feed-engage --authors "a,b" --duration 5m --persona my-account  # Scroll the feed and like posts from these authors (wab-only)
 ```
 
 `--account` selects the cookie file under `~/.wonda/instagram-cookies/<account>.json`. For `saved`, carousels contribute every child's media URL (videos win over images for the per-item URL); pagination uses the `max_id` cursor (`--cursor`, `--all`, `--max-pages`, `--delay <ms>`). `comments` takes a `/p/<code>/` or `/reel/<code>/` URL (or a bare shortcode), decodes it to the numeric media id locally, then pages the same `max_id` cursor; the result carries each comment's `id`, `text`, `authorHandle`, `authorName`, `createdAt`, `likeCount`, `replyCount` plus the parent media's total `commentCount`. For posting, `wonda instagram post --via api` and `wonda publish instagram` share the same Graph-API path. `comment` (write) takes a `/reel/<code>/` or `/p/<code>/` URL (or bare shortcode) plus the text, and is wab-only: it auto-spawns the persona's WAB if needed, types into the inline composer, submits, and writes a `comment` audit row to `~/.wonda/wab/audit.jsonl` (failures fire `wab_action_failed` telemetry and drop a failure bundle).
@@ -1314,11 +1365,21 @@ wonda reddit subscribe marketing --account burner-1      # Subscribe (--unsub to
 wonda reddit save <fullname> --account burner-1          # Save a post or comment (--post-id for t1_*)
 wonda reddit unsave <fullname> --account burner-1
 wonda reddit delete <fullname> --account burner-1        # Delete your own post or comment
+wonda reddit feed-engage --authors "a,b" --duration 5m   # Scroll the feed and upvote posts from these authors (wab-only)
+
+# Account creation (wab-only, flagged: redditAccountCreationEnabled)
+wonda reddit signup --persona <name> --random                                       # Create a brand-new account end-to-end
+wonda reddit signup --persona <name> --email <addr> --username <handle> --password <pw>
+wonda reddit signup --persona <name> --resume credentials                           # Resume after a manual step
 ```
 
 Add `--dry-run` on a subreddit `comment` or `submit` to type into the composer but not click Post (useful for review). It is DOM-only, so it does not apply to profile self-posts or link posts.
 
+`wonda reddit signup` provisions a brand-new Reddit account: it mints a throwaway mailbox (or uses `--email`), drives the 5-stage register form (email, emailed code, username plus password, age, interests) in a headful WAB window, fetches the verification code from the inbox subject line, then binds the persona and syncs cookies so reddit reads and writes route through the new account. Gated by the `redditAccountCreationEnabled` flag (server-evaluated preflight: `GET /reddit/signup/enabled`). Bind a mobile or residential proxy to the persona first (`wonda wab config set <persona> proxy_url socks5://...`): Reddit shadowbans accounts born on datacenter IPs. If a field cannot be located the flow pauses and leaves the window on that screen; finish by hand, then re-run with `--resume <step>`. On success it prints `{username, email, password, persona}` plus a ready-to-paste `op item create` block for the "Reddit logins" vault.
+
 Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pages`, `--delay <ms>`.
+
+**Feed-engage** (`wonda {linkedin,x,reddit,instagram} feed-engage`): scroll the home feed like a human and engage only the posts that scroll past from your target authors. On reddit that engagement is an upvote, on the others a like. It is WAB-only (it drives a live browser scroll + click through the account's persona, so there is no cookie path) and opportunistic: it never opens profiles or searches, it just rides the feed and acts when a target's post appears. Pass the targets with `--authors "alice,bob"` (comma-separated handles/vanities/usernames, leading `@` and `u/` are stripped) or `--authors-file <path>` (one author per line, local use only). `--duration` caps the wall-clock browse time (e.g. `5m`, `90s`, default `2m`) and `--max-engage` caps the number of successful likes/upvotes (default `8`); whichever limit hits first stops the run. Pacing is human (eased scrolling, randomized dwell, jittered cursor motion), so let it run for the full duration rather than expecting an instant result.
 
 ### Reddit chat / DMs
 
@@ -1352,24 +1413,60 @@ Manage cloud-hosted social personas that run behind mobile proxies. Sessions are
 wonda twin list                                          # List twin sessions
 wonda twin show <persona>                                # Show one session
 wonda twin provision <persona> --region GB               # Provision (flags: --provenance, --spend-cap <microdollars>, --allow <cmd> (repeatable))
+                                                         # --max-writes-per-hour <N>: max platform writes/hour before the soft cap logs+meters (0/unset = unlimited)
+                                                         # --alert-webhook-url <url> + --alert-webhook-secret <secret>: HMAC-signed owner alert on needs_auth / consecutive failures (secret is write-only)
+wonda twin update <persona> --spend-cap <microdollars>   # Change caps + alert webhook post-provision without re-provisioning (flags: --max-writes-per-hour <N>, --alert-webhook-url <url>, --alert-webhook-secret <secret>)
 wonda twin pause <persona>                               # Pause a session
 wonda twin resume <persona>                              # Resume a paused session
 wonda twin needs-auth <persona>                          # Flag a session as needing re-auth
+wonda twin recover <persona>                             # Clear an ACTIVE critical safety signal (captcha / unusual-activity / account-restricted) AFTER you have resolved it in-browser. Those criticals do NOT change the twin status, so the safety gate hard-blocks the persona with NO auto-resume until you clear it; this appends a 'recovered' marker the gate reads to stop treating the critical as active. A security checkpoint / needs_auth is cleared by re-login (wonda twin login) instead, not this. -> { recovered, clearedSignalType, persona }
+wonda twin login <persona> --platform linkedin           # Open a born-in-cloud streamed login in a DEDICATED tab inside your local WAB (the cloud login looks like our antidetect browser, just on the cloud; an existing WAB session in your other tabs is left untouched). Spawns the persona's WAB visibly and opens the viewer at <web-base>/twin-login.html (token in the URL fragment); prints the viewer URL too so you can open it in any browser. On sign-in the stream stops and a Wonda "you are signed in" confirmation replaces it (the platform feed is hidden as you sign in). Unmetered. (--platform <x|linkedin|reddit>, --web-base default https://wonda.sh)
 
 # Schedules
 wonda twin schedule list --persona <persona>             # List schedules (--persona optional)
-wonda twin schedule add <persona> --cron "0 9 * * *" --kind saved_sync   # Add (--kind: saved_sync|engage|agent; --command, --prompt, --mode deterministic|agent)
+wonda twin schedule add <persona> --cron "0 9 * * *" --kind saved_sync --name saved-posts-scrape   # Add (--kind: saved_sync|engage|agent; --command, --prompt, --mode deterministic|agent)
+                                                         # --name <label>: human-readable schedule label (e.g. saved-posts-scrape) for listings/audit; optional
                                                          # --jitter-window-seconds N: fire once/day at a random-looking minute within N seconds AFTER the cron time (the cron marks the window start); 0/omitted = fire exactly at the cron minute
                                                          # --output-webhook <url>: deliver each run's captured command stdout to your HTTPS webhook (payload carries a short-TTL signed download URL); --output-webhook-secret <s>: HMAC-SHA256 key signing the body via the X-Wonda-Signature header
+wonda twin schedule add <persona> --kind engage --cron "0 10,14,17 * * 1-5" --jitter-window-seconds 1200 --commands "linkedin feed-engage --authors 'alice,bob' --duration 5m"   # Recurring feed-engage on the cloud twin
+                                                         # NOTE: pass targets inline with --authors (comma-separated, no spaces). --authors-file is local-only; the cloud runner has no filesystem for the file.
 wonda twin schedule enable <id>                          # Enable a schedule
 wonda twin schedule disable <id>                         # Disable a schedule
 wonda twin schedule rm <id>                              # Delete a schedule
 
 # Runs
 wonda twin runs --persona <persona> --limit 20           # Recent runs
-wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately
+wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately (a WRITE command over the per-identity action limit returns a structured throttled 429)
 wonda twin output <runId>                                # Fetch a run's captured command output (--url prints just the short-TTL signed download URL)
+
+# SENSE layer (read-only "ask before you act" probes; reuse the EXACT decision + caps the write gate enforces)
+wonda twin can-act --persona <p> [--action connect]      # Would this twin run this verb (or any write, no --action) right now? -> { canAct, reason, code, deferUntil, actionsRemaining }. Reads/generation always pass.
+wonda twin actions --persona <p>                          # Per-action remaining limit + consumed-today + rolling-7d, plus the resolved cap `mode` (global aggregate floor + connect/message/like/comment). `limit` is null when uncapped (unlimited mode).
+wonda twin health --persona <p>                           # Liveness (active|paused|needs_auth) + signalCooldown (the derived graded cooldown: strongest unresolved platform signal) + recentSignals (the append-only health-record tail: 429s, captchas, checkpoints). When an unresolved critical (captcha / unusual-activity / account-restricted) is active it prints a `run: wonda twin recover <persona> after resolving in-browser` hint to stderr (stdout JSON is untouched).
+
+# Action caps (per-twin MODE + custom overrides the safety gate enforces)
+wonda twin limits get <persona>                           # Show the twin's cap mode (warmup|conservative_steady|moderate_max|unlimited) + custom overrides
+wonda twin limits set <persona> --mode moderate_max       # Set the cap mode. unlimited = NO caps at all (no global, no per-action, no weekly)
+wonda twin limits set <persona> --connect 30 --message 60 # Set CUSTOM daily caps per action (UNCLAMPED, own risk): --connect/--message/--like/--comment, --global <N> (daily aggregate), --*-weekly <N> (rolling-7d). Passing override flags MERGES into the stored overrides (other custom caps are kept); --clear-overrides drops them all back to the mode.
 ```
+
+**Safety is intrinsic to running anything on a twin.** Account safety is NOT a feature of the outreach sequencer: it is a property of "run a command on a twin." The SAME per-identity safety gate guards an ad-hoc agent (`wonda linkedin connect --account natty`), the autopilot, a `twin schedule`, and the deterministic outreach sequencer, through ONE enforcement path against ONE shared per-identity counter. So a heavy ad-hoc day on a persona tightens the headroom on that persona automatically (one set of ceilings per identity, no double-charge). The caps are a per-twin MODE (warmup / conservative_steady (default) / moderate_max / unlimited; set via `wonda twin limits set`) selecting the per-action daily ceilings, the per-action rolling-7d weekly ceilings, AND a global daily aggregate cap; `unlimited` turns every cap off, and a custom override is UNCLAMPED. The gate classifies each command from its argv: WRITE / social-action commands (connect, send-message, like, comment, ...) are capped; reads (connection-status, conversations, profile, search), generation (image/video/text), and unknown commands pass freely ungated. This is why the SENSE verbs exist: an agent asks `can-act` / `actions` / `health` BEFORE firing, then branches on the typed result instead of attempting a write and catching a deny.
+
+**Uniform error taxonomy (branch on `code`, never on the message).** Every twin/outreach surface returns the existing `{ error: { code, message } }` envelope, and on a quota deny it also carries `deferUntil` (the ISO time the quota resets) + `reason` (the granular gate signal). Agents branch on the typed `code`:
+
+| `code`                | Meaning                                                                                                                                                                                                                                                                                | What the agent should do                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `throttled`           | A WRITE was blocked by the per-identity safety gate (umbrella, HTTP 429). The granular cause is in `reason` (`limit_hit` / `weekly_limit_hit` / `warmup_frozen`).                                                                                                                      | Retry after `deferUntil`; or pick another sender.                                                                                             |
+| `limit_reached`       | A per-action DAILY cap (connect / message / like / comment, per the twin's cap mode) is spent for the UTC day.                                                                                                                                                                         | Wait for `deferUntil` (next UTC midnight) or use a different action / sender.                                                                 |
+| `limit_exhausted`     | The GLOBAL daily aggregate cap (the `_all` floor) OR a per-action rolling-7d weekly ceiling is spent.                                                                                                                                                                                  | Back off this identity until `deferUntil`; rotate to another twin, or raise the cap mode via `wonda twin limits set`.                         |
+| `needs_auth`          | The twin's session needs re-authentication (cookie expiry / checkpoint).                                                                                                                                                                                                               | Run `wonda twin login <persona>`; do not retry the write.                                                                                     |
+| `sender_blocked`      | The identity is silent-throttled / watchdog-paused (a connect 200'd with no invitationUrn, the twin is paused / warmup frozen, OR an unresolved critical platform signal — captcha / unusual-activity / account-restricted, or a chronic-429 storm). A health stop, not a clean limit. | Stop driving this identity; check `wonda twin health`. For an active critical, resolve it in-browser then run `wonda twin recover <persona>`. |
+| `command_not_allowed` | The command is not on the twin's permission allowlist.                                                                                                                                                                                                                                 | Re-provision with `--allow <cmd>` or drop the step.                                                                                           |
+| `unsupported_channel` | The argv targets a platform / verb the twin or CLI can't run.                                                                                                                                                                                                                          | There is no such wonda command for this twin; drop it.                                                                                        |
+| `not_found`           | The twin / campaign / resource does not exist.                                                                                                                                                                                                                                         | Provision / create it first.                                                                                                                  |
+| `deferred`            | A structured, non-error deferral: in a BATCH, the gate dropped one over-limit command and ran the rest.                                                                                                                                                                                | Re-enqueue the deferred command after `deferUntil`.                                                                                           |
+
+`wonda twin can-act` returns the SAME `code` + `reason` for a deny that a later write would, so an agent that reads `code: "needs_auth"` from `can-act` and then sees `needs_auth` on a write branches on the one code.
 
 ## Workflow & discovery
 
@@ -1479,6 +1576,14 @@ wonda capabilities                                    # Full platform capabiliti
 wonda pricing list                                    # Pricing for all models
 wonda pricing estimate --model seedance-2 --prompt "..." # Cost estimate
 wonda style list                                      # Available visual styles
+wonda balance                                         # Current credit balance (org wallet in org context)
+wonda usage                                           # Spend summary for the current month (per model/project)
+wonda usage --month 2026-05                           # ...for a calendar month
+wonda usage --from 2026-04-01 --to 2026-06-30         # ...for a custom range
+wonda usage --project acme-launch                     # ...restricted to one project
+wonda project list                                    # Spend-tagging projects in the active scope
+wonda project create acme-launch                      # Create one (org scope: admin/owner only)
+wonda use --project acme-launch                       # Tag subsequent spend with it (sticky)
 wonda topup                                            # Top up credits (opens Stripe checkout)
 ```
 
