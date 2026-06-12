@@ -1344,6 +1344,7 @@ wonda reddit auth check
 # Read (direct tls-client, --account picks the session for logged-in views)
 wonda reddit search "AI video" --sort top --time week   # Search posts (sort: relevance, hot, top, new, comments)
 wonda reddit subreddit marketing                        # Subreddit info
+wonda reddit rules marketing                            # Subreddit posting rules (+ site-wide rules)
 wonda reddit feed marketing --sort hot                  # Subreddit posts (sort: hot, new, top, rising)
 wonda reddit user spez                                  # User profile
 wonda reddit user-posts spez --sort top                 # User's posts
