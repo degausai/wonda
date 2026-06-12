@@ -192,6 +192,11 @@ The mental model: you have **accounts** (one identity per platform). Each platfo
 wonda wab install                             # one-time: npm install + patchright chromium (shared by sessions, record, brand extract)
 wonda wab start [account]                     # spawn (offscreen by default; --visible to show)
 wonda wab stop [account]                      # graceful shutdown
+wonda wab show [account]                       # peek a background WAB on-screen to watch it (suspends the macOS focus guard); starts it offscreen first if needed
+wonda wab hide [account]                       # send a surfaced WAB back offscreen, resume silent background operation
+wonda wab menubar                              # macOS menu-bar control (🐱): click to Show/Hide running WABs; --stop to remove
+# macOS Dock menu: right-click a running WAB's Dock tile (the 🐱) for "Show on screen" / "Send to background" (same as wab show/hide). Each running persona has its own Dock tile and its menu controls only that persona. Opt out with WAB_DOCK_MENU=0.
+# macOS: a background WAB no longer steals focus or flashes the menu bar / Dock when it opens a new tab; the Dock tile stays, it just never comes to the foreground until you `wab show` it.
 wonda wab status                              # list personas + last activity
 wonda wab login <account> <linkedin|x|reddit> # RECOMMENDED for a new persona: open headful window, user logs in, session minted in-WAB (independent + fingerprint-coherent)
 wonda wab check <account> <linkedin|x|reddit> # non-interactive session-alive probe
