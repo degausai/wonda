@@ -1,10 +1,10 @@
 <div align="center">
 
-# Wonda Skills
+# Wonda Agent Docs
 
-**Skill files for AI coding agents**
+**Agent-facing documentation for Wonda**
 
-Curated prompts, workflows, and content guides that teach your AI agent new capabilities.
+This README is synced with `apps/api-service/skill/wonda-cli.md` to the public `degausai/wonda` repository.
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-d97706?style=flat-square)](https://claude.ai/code)
 [![Cursor](https://img.shields.io/badge/Cursor-000?style=flat-square)](https://cursor.com)
@@ -20,13 +20,14 @@ and any agent that can read markdown.
 
 ---
 
-## What are skills?
+## What is synced?
 
-Skills are `.md` files that give AI coding agents domain-specific knowledge — content strategies, editing workflows, prompt techniques, and more. Drop them into your project and your agent picks them up automatically.
+Only these files are part of the public repo sync:
 
-## Usage
+- `skills/README.md`
+- `apps/api-service/skill/wonda-cli.md`
 
-Give the skill files to your agent. That's it.
+Published content skills are maintained in `apps/api-service/content-skills/` and served by the Wonda API.
 
 ## License
 

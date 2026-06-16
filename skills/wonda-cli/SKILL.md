@@ -80,12 +80,12 @@ Not all commands are available to every account type:
 | Tier                                        | Access                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Anonymous** (temporary account, no login) | Media upload/download, transcription, social publishing, scraping, analytics. Editing ops (`wonda edit video/image/audio`) render locally via ffmpeg (no render credits); media download/upload still use the API.                                                                                                                                                     |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, recipes, brand                                                                                                                                                                                                                                                                   |
+| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, brand                                                                                                                                                                                                                                                                            |
 | **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                                                                                                                                                                                          |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled), `wonda reddit signup` (redditAccountCreationEnabled). Flip the flag in PostHog for the account.                                                                                                                                                                                          |
+| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled), `wonda reddit signup` (redditAccountCreationEnabled), `wonda twin` (twinsEnabled), `wonda email` (emailServerApiEnabled), brand v2 (brandSystemV2), public LinkedIn profile enrichment (linkedinProfileEnrichmentEnabled). Flip the flag in PostHog for the account.                     |
 | **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled Patchright + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. `wonda compose motion`/`wonda compose text` render hyperframes HTML compositions locally (requires Node >= 22 + ffmpeg, no API call). `wonda doctor` verifies prerequisites. |
 
-If a command returns a `403` error, check your plan at https://app.wondercat.ai/settings/billing.
+If a command returns a `403` error, check your plan at https://wonda.sh/account/plan.
 
 ### Voice cloning
 
@@ -252,6 +252,7 @@ Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platfor
 **Per-command transport (`--via`).** `linkedin`, `x`, and `reddit` commands take:
 
 - `--via cookies|wab`: `cookies` reads the flat per-account JSON store (fast, no Chromium); `wab` routes through the account's persona Chromium (cookies + TLS fingerprint inherit from a real browser session). An unsupported value errors loudly rather than silently downgrading.
+- `--via public`: paid public-data API where a command explicitly supports it. For LinkedIn this avoids logged-in cookies and WAB profile reads, and uses the public scrape task route for `wonda linkedin profile` and `wonda linkedin enrich`.
 - `--account <name>`: which on-disk identity to use (cookie filename / persona). Persona resolution is implicit: the first `--via wab` use auto-creates a persona named after the account and (on a TTY) chains straight into login.
 
 **Defaults differ for reads vs writes.** Read commands (profile, posts, search, timeline, etc.) default to `cookies` (direct API), because that path is fast and detection-safe. Write / engagement commands (post, comment, like, follow, connect, message, repost, delete) default to `wab`, because the cookie-API path triggers anti-abuse heuristics on LinkedIn / X / Reddit at any meaningful volume. Pass `--via cookies` to a write command if you explicitly want the legacy API path (where the command supports it).
@@ -374,20 +375,20 @@ wonda skill get <slug>                          # Full step-by-step guide for a 
 
 **Full skill index:**
 
-| Slug                      | Description                                                                                                                           | Input                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| product-video             | Product/scene video — prompt library for all categories                                                                               | optional product image      |
-| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll                                                                    | optional reference          |
-| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy                                                                                 | optional product image      |
-| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                                                                                   | reel or TikTok URL          |
-| ugc-dance-motion          | Dance/motion transfer                                                                                                                 | image + video               |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                                                                                        | user brief                  |
-| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                    | subreddit + product         |
-| twitter-influencer-search | Find X influencers and amplifiers                                                                                                     | competitor/niche keywords   |
-| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                | app screenshot + audience   |
-| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                             | product + optional image    |
-| ffmpeg                    | All local ffmpeg recipes — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId |
-| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                     | image mediaId or local path |
+| Slug                      | Description                                                                                                                             | Input                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| product-video             | Product/scene video — prompt library for all categories                                                                                 | optional product image      |
+| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll                                                                      | optional reference          |
+| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy                                                                                   | optional product image      |
+| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                                                                                     | reel or TikTok URL          |
+| ugc-dance-motion          | Dance/motion transfer                                                                                                                   | image + video               |
+| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                                                                                          | user brief                  |
+| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                      | subreddit + product         |
+| twitter-influencer-search | Find X influencers and amplifiers                                                                                                       | competitor/niche keywords   |
+| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                  | app screenshot + audience   |
+| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                               | product + optional image    |
+| ffmpeg                    | All local ffmpeg workflows — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId |
+| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                       | image mediaId or local path |
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -1029,8 +1030,14 @@ and upload it first, then clip with `--media`:
 yt-dlp -o /tmp/source.mp4 \
   -f "bv*[ext=mp4][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]" \
   --merge-output-format mp4 "<youtube-url>"
-MEDIA=$(wonda media upload /tmp/source.mp4 --quiet)
+MEDIA=$(wonda media upload /tmp/source.mp4 --no-transcode --quiet)
 ```
+
+`--no-transcode` skips the server-side normalize so longform sources are
+usable in seconds instead of minutes (a 1 h upload otherwise transcodes for
+~19 min before clipping can start). Clipping handles incompatible formats
+(AV1, rotated phone video) per selected clip automatically. Omit the flag
+for uploads you plan to publish or edit directly without clipping.
 
 ```bash
 # Plan only — fast, no render
@@ -1139,6 +1146,7 @@ wonda analytics meta-ads
 # Scrape competitors
 wonda scrape social --handle @nike --platform instagram --wait
 wonda scrape social-status <taskId>                   # Get results of a social scrape
+wonda scrape cancel <taskId>                          # Cancel any public scrape task
 wonda scrape ads --query "sneakers" --country US --wait
 wonda scrape ads --query "sneakers" --country US --search-type keyword \
   --active-status active --sort-by impressions_desc --period last30d \
@@ -1249,6 +1257,11 @@ wonda linkedin auth status --account <name>                        # local-only:
 wonda linkedin me                                    # Your identity
 wonda linkedin search "data engineer" --type PEOPLE  # Search (types: PEOPLE, COMPANIES, ALL)
 wonda linkedin profile johndoe                       # View profile (vanity name or URL)
+wonda linkedin profile johndoe --via public          # View public profile data through the paid scrape API
+wonda linkedin profile johndoe --via public --force-refresh --idempotency-key run-123
+wonda linkedin enrich johndoe janedoe                # Batch profile enrichment through cookies, max 25 inputs
+wonda linkedin enrich johndoe janedoe --via public   # Paid public enrichment task, default waits for completion
+wonda linkedin enrich johndoe --via public --no-wait # Create task only, then poll GET /scrape/linkedin-profiles/{taskId}
 wonda linkedin company google                        # View company page
 wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
@@ -1262,7 +1275,8 @@ wonda linkedin comments <activity-id> --account <name> --via wab  # Commenters w
 wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (DOM scrape via WAB; for social listening see content-skills/linkedin-social-listening.md)
 
 # WAB lifecycle (see `wonda wab --help` for the full surface: start/stop/status/install/bind/sync-cookies/logs)
-wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON)
+wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON; --company-detail=false skips company page lookups)
+wonda linkedin enrich-engagers --activity-id <id> --profile-source public  # Keep engager collection logged-in, use paid public profile detail
 
 # Write
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
@@ -1283,7 +1297,9 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 - **`--via cookies` (API):** Voyager REST API with fingerprint mitigations (profile visit, drawer warm-up, connect). Fast (~3s), supports notes via `customMessage`.
 - **`--via wab`:** Routes through the account's persona Chromium (auto-spawned) for full stealth via DOM dispatch. Zero fingerprinting risk. Slower (~10s) but fully safe. Use when you need extra protection. Patchright + Chromium install once via `wonda wab install` (~315 MB, idempotent). The persona reuses its persistent profile under `~/.wonda/wab/personas/<persona>/profile`. Cookies live in `~/.wonda/linkedin-cookies/<account>.json`, bound to the persona via `account-bindings.json`; rotating via `wonda linkedin auth set --account <name>` pushes the new cookies into the live Chromium if it's running.
 
-**Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--max-profiles N` to cap the batch (default 25 on sensitive accounts, hard ceiling 100) and `--out file.json` to write to disk.
+**LinkedIn public profile enrichment:** `wonda linkedin enrich <profile-url-or-vanity...>` defaults to `--via cookies`, uses the local logged-in profile read path one profile at a time, reuses `_artifacts/linkedin-cache`, adds jitter between misses, aborts on 429-style rate-limit signals, and rejects more than 25 inputs. Use `--via public` for paid public enrichment through `POST /api/v1/scrape/linkedin-profiles`, polling `GET /api/v1/scrape/linkedin-profiles/{taskId}` until completion unless `--no-wait` is set. Cancel a running paid scrape with `wonda scrape cancel <taskId>`. Public mode supports `--force-refresh`, `--timeout 10m`, `--idempotency-key`, and `--output json|table`. The single-profile `wonda linkedin profile --via public` path uses the same paid route and also supports `--force-refresh`, `--timeout`, and `--idempotency-key`.
+
+**Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--company-detail=false` to skip company page lookups and keep only inlined employer identity (`name`, `urn`, `universalName`). Use `--max-profiles N` to cap the batch (default 100, hard ceiling 100 unless `--override-max-profiles` is set) and `--out file.json` to write to disk. `--profile-source cookies|public` controls only per-profile detail enrichment; engager collection still uses logged-in LinkedIn access.
 
 For ICP qualification of post engagers, see `content-skills/linkedin-icp-qualify.md`.
 
@@ -1442,7 +1458,7 @@ wonda twin schedule rm <id>                              # Delete a schedule
 
 # Runs
 wonda twin runs --persona <persona> --limit 20           # Recent runs
-wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately (a WRITE command over the per-identity action limit returns a structured throttled 429)
+wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately (a WRITE command over the per-identity action limit returns a structured throttled 429). --command is tokenized quote-aware, so quote a free-text body that has spaces: --command "linkedin send-message alice 'hi there :)' --via wab --account alice"
 wonda twin output <runId>                                # Fetch a run's captured command output (--url prints just the short-TTL signed download URL)
 
 # SENSE layer (read-only "ask before you act" probes; reuse the EXACT decision + caps the write gate enforces)
@@ -1482,7 +1498,7 @@ Extract a website's design system (colors, typography, radii, shadows, spacing, 
 
 Requires a one-time `wonda wab install` to download Patchright + Chromium (~300 MB, shared across `wonda wab record`, the authenticated session flows, and `brand extract`).
 
-This is the in-house replacement for the previous `npx`-based brand-extraction CLI used in the `slide-generation` / `slide-generation-system` / `creative-static-ads` / `premium-static-ads` skills.
+This is the in-house replacement for the previous `npx`-based brand-extraction CLI used in the `slide-generation` / `creative-static-ads` / `premium-static-ads` skills.
 
 ```bash
 # Local-only — no auth, no credits, no API call
@@ -1545,30 +1561,33 @@ wonda analyze video --media $VIDEO_MEDIA --wait --jq '.outputs[] | select(.outpu
 
 **Error handling**: 402 = insufficient credits, 409 = media still processing (CLI auto-retries).
 
-### Chat (AI assistant)
+### Email
 
-Interactive chat sessions for content creation — the AI handles generation, editing, and iteration.
+Manage throwaway email accounts and read mailbox messages. These commands require the `emailServerApiEnabled` flag.
 
 ```bash
-wonda chat create --title "Product launch"            # New session
-wonda chat list                                       # List sessions (--limit, --offset)
-wonda chat messages <chatId>                          # Get messages
-wonda chat send <chatId> --message "Create a UGC reaction video"
-wonda chat send <chatId> --message "Edit it" --media <id>
-wonda chat send <chatId> --message "..." --aspect-ratio 9:16 --quality-tier max
-wonda chat send <chatId> --message "..." --style <styleId>
-wonda chat send <chatId> --message "..." --passthrough-prompt  # Use exact prompt, no AI enhancement
+wonda email account create [email]                    # Create an email account
+wonda email account create --random --domain <domain> # Create an email with a random username
+wonda email account create --username <name> --domain <domain> # Create an email with a chosen username
+wonda email account get <email>                       # Get email account details
+wonda email account delete <email>                    # Delete an email account
+
+wonda email inbox list <email>                        # List inbox messages
+wonda email inbox read <email> <id>                   # Read a specific email with verification codes
+wonda email inbox wait <email> --timeout 60           # Wait for a new email to arrive
+wonda email inbox wait <email> --since "$SINCE"       # Only messages after an RFC 3339 timestamp
+wonda email inbox wait <email> --since-id "$MAX_ID"   # Only messages with id greater than this
 ```
 
-### Jobs & runs
+For signup flows, capture `--since` before triggering the verification email, or snapshot the current max message id with `wonda email inbox list <email> --jq '[.[].id] | max // 0'` and pass it to `--since-id`.
+
+### Jobs
 
 ```bash
 wonda jobs get inference <id>                         # Inference job status
 wonda jobs get editor <id>                            # Editor job status
 wonda jobs get publish <id>                           # Publish job status
 wonda jobs wait inference <id> --timeout 20m          # Wait for completion
-wonda run get <runId>                                 # Run status
-wonda run wait <runId> --timeout 30m                  # Wait for run completion
 ```
 
 ### Discovery
