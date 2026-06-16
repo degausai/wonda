@@ -1009,6 +1009,15 @@ detection + One-Euro stabilizer, default) and the existing
 `--reframe blur-fill` to keep the full landscape source inside a
 vertical canvas with a blurred background instead.
 
+**Translated captions:** pass `--caption-language <code>` (ISO-639-1,
+e.g. `en`) to render captions in another language while keeping the
+original audio. Each clip's transcript is translated per sentence and the
+spoken timing is preserved, so captions stay in sync. Omit the flag to
+caption in the spoken language. On `--restyle`, the language is inherited
+from the parent job unless overridden, so you can cheaply spin out an
+English-captioned version of an already-clipped job (reuses the
+transcript, no re-transcription).
+
 Async: `POST /api/v1/clipping` returns a `clippingJobId`; the CLI polls
 `GET /api/v1/clipping/jobs/{id}` under `--wait`. Pass `--output <dir>`
 and the CLI downloads each rendered clip + a `plan.json`.
@@ -1049,6 +1058,12 @@ wonda clipping --media $MEDIA \
   --caption-preset "TikTok Red Captions" \
   --hook auto \
   --wait --output ./clips/
+
+# Translate captions to English (original audio kept)
+wonda clipping --media $MEDIA --caption-language en --wait --output ./clips/
+
+# Re-caption an existing job into English (reuses STT + clip picks, ~$0)
+wonda clipping --restyle <jobId> --caption-language en --wait --output ./clips/
 
 # Filter by speaker (uses ElevenLabs diarization labels)
 wonda clipping --media $MEDIA --speaker SPEAKER_00 --wait --output ./clips/
