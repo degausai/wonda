@@ -268,7 +268,7 @@ Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platfor
 
 **Defaults differ for reads vs writes.** Read commands (profile, posts, search, timeline, etc.) default to `cookies` (direct API), because that path is fast and detection-safe. Write / engagement commands (post, comment, like, follow, connect, message, mute, repost, delete) default to `wab`, because the cookie-API path triggers anti-abuse heuristics on LinkedIn / X / Reddit at any meaningful volume. Pass `--via cookies` to a write command if you explicitly want the legacy API path (where the command supports it).
 
-**Commands that require `--via wab`.** A few commands have no cookie path and only run through the Wonda Automation Browser: `wonda linkedin comment`, `wonda linkedin reply-comment`, `wonda linkedin mute`, `wonda linkedin edit-post`, `wonda linkedin edit-comment`, `wonda linkedin delete-comment`, `wonda linkedin post --media`, `wonda x delete`, `wonda x reply --attach`, `wonda x dm send`, `wonda x dm accept`, and `wonda x dm start`. On these, the default already resolves to wab (one stderr line noting it); passing `--via cookies` explicitly errors. Reddit's writes (`vote`, `comment`, `subscribe`, `save`, `unsave`, `delete`, and subreddit `submit`) are likewise wab-only.
+**Commands that require `--via wab`.** A few commands have no cookie path and only run through the Wonda Automation Browser: `wonda linkedin comment`, `wonda linkedin reply-comment`, `wonda linkedin mute`, `wonda linkedin follow`, `wonda linkedin edit-post`, `wonda linkedin edit-comment`, `wonda linkedin delete-comment`, `wonda linkedin post --media`, `wonda x delete`, `wonda x reply --attach`, `wonda x dm send`, `wonda x dm accept`, and `wonda x dm start`. On these, the default already resolves to wab (one stderr line noting it); passing `--via cookies` explicitly errors. Reddit's writes (`vote`, `comment`, `subscribe`, `save`, `unsave`, `delete`, and subreddit `submit`) are likewise wab-only.
 
 **Per-account credentials.** Cookies live in per-account JSON files on disk:
 
@@ -1426,6 +1426,7 @@ wonda linkedin enrich-engagers --activity-id <id> --profile-source public  # Kee
 wonda linkedin visit <vanity-name> --account <name>  # Visit a real profile page in the WAB, dwell, and optionally notify the target
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
 wonda linkedin connect <vanity-name> -m "Hey!" --account <name> --via wab  # Full stealth via the account's persona
+wonda linkedin follow <vanity-name-or-url> --account <name> # Follow a member or company (wab-only; primary button or under "More"; idempotent)
 wonda linkedin comment <activity-id> --account <name> # Add a comment (wab-only: needs SDUI render state)
 wonda linkedin reply-comment <activity-id> <comment-id> "Good point." --account <name> # Reply under a specific comment (wab-only)
 wonda linkedin mute <vanity-name-or-url> --account <name> # Mute a member's posts in the actor's feed (wab-only; keeps the connection)
