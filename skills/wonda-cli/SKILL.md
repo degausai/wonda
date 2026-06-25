@@ -75,17 +75,18 @@ A paid org seat (`WONDA` / `WONDA_PREMIUM`) grants the same paid feature access 
 
 ### Access tiers
 
-Not all commands are available to every account type:
+Wonda is paid-only: every product surface (generation, media, publishing, scraping, analysis, skills, cloud twin) requires a paid plan. New accounts get no credits and no product access until they subscribe.
 
-| Tier                                        | Access                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Anonymous** (temporary account, no login) | Media upload/download, transcription, social publishing, scraping, analytics. Editing ops (`wonda edit video/image/audio`) render locally via ffmpeg (no render credits); media download/upload still use the API.                                                                                                                                                                                           |
-| **Free** (logged in, Basic/Free plan)       | Everything above + **generation** (`image/generate`, `video/generate`, etc.), styles, brand                                                                                                                                                                                                                                                                                                                  |
-| **Paid** (Plus, Pro, or Absolute plan)      | Everything above + **video analysis** (requires credits), **skill commands** (`wonda skill install/list/get`)                                                                                                                                                                                                                                                                                                |
-| **Flagged** (per-account PostHog flags)     | `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled), `wonda reddit signup` (redditAccountCreationEnabled), `wonda linkedin signup` (linkedinAccountCreationEnabled), `wonda twin` (twinsEnabled), `wonda email` (emailServerApiEnabled), brand v2 (brandSystemV2), public LinkedIn profile enrichment (linkedinProfileEnrichmentEnabled). Flip the flag in PostHog for the account. |
-| **Local** (no API call, no credits)         | `wonda brand extract <url>` (no `--save`) extracts brand tokens from a URL via the bundled stealth browser + Chromium driver. No auth required. Requires a one-time `wonda wab install` first. `wonda compose motion`/`wonda compose text` render hyperframes HTML compositions locally (requires Node >= 22 + ffmpeg, no API call). `wonda doctor` verifies prerequisites.                                  |
+| Tier                                            | Access                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anonymous** (temporary account, no login)     | No product access. The CLI mints a temporary account on first run, but it reaches only the local commands below plus the auth/billing endpoints. Run `wonda auth login`, then subscribe.                                                                                                                                                                                                                 |
+| **Free** (logged in, no paid plan)              | No product access. Subscribe at https://wonda.sh/account to use the product.                                                                                                                                                                                                                                                                                                                             |
+| **WONDA** (`$19.99/mo`, "Pro")                  | Everything except cloud twin: generation (`image/generate`, `video/generate`, ...), media upload/download, publishing, scraping, analytics, video analysis, skills (`wonda skill install/list/get`), transitions, clipping, scheduling, email, reddit/linkedin account creation, styles, brand.                                                                                                          |
+| **WONDA_PREMIUM** (`$49.99/mo`, "Premium")      | Everything in WONDA, plus **cloud twin** (`wonda twin`: provisioning, scheduled runs, streamed login) with antidetect / shadowban protection, no caps, and US account creation.                                                                                                                                                                                                                          |
+| **Flagged** (per-account PostHog kill-switches) | Included in the paid plan but still gateable by a per-account flag: `wonda transitions` (transitionsEnabled), `wonda clipping` (clippingEnabled), `wonda reddit signup` (redditAccountCreationEnabled), `wonda twin` (twinsEnabled, on top of the Premium plan), `wonda email` (emailServerApiEnabled), brand v2 (brandSystemV2), public LinkedIn profile enrichment (linkedinProfileEnrichmentEnabled). |
+| **Local** (no API call, no credits, no plan)    | Run entirely on your machine, so they work without a plan: `wonda brand extract <url>` (no `--save`), `wonda compose motion`/`wonda compose text`, `wonda wab record <url>`, `wonda edit ...` ffmpeg primitive transforms on local files, and `wonda doctor`. The Chromium-backed ones need a one-time `wonda wab install`.                                                                              |
 
-If a command returns a `403` error, check your plan at https://wonda.sh/account/plan.
+If a command returns a `403` (`paid_plan_required`), subscribe at https://wonda.sh/account.
 
 ### Voice cloning
 
@@ -205,27 +206,33 @@ wonda wab record <url>                        # anonymous one-shot capture (no a
 wonda wab sync-cookies [account]              # force wab → disk cookie sync now (don't wait for the 10-min timer)
 wonda wab logs [account] --tail 100           # tail driver.log (--audit for structured per-command log)
 wonda wab errors --tail 20 --since 24h        # tail the cross-persona action-failure log
+wonda wab top-failures --since 7d             # rank local WAB failures by platform/action/reason, joined with DOM recovery stats
+wonda wab top-failures --platform x --json    # machine-readable local failure ranking
 wonda wab bundle-failures list                # recent action failure bundles (one per failed run: screenshot, dom, visible-elements, cookies-summary REDACTED)
 wonda wab bundle-failures show <id>           # print manifest + file tree for a bundle (id = unix-ms-ts prefix)
 wonda wab bundle-failures ship <id>           # zip to ~/Downloads/wonda-failure-<id>.zip for sharing
 wonda wab bundle-failures prune               # remove bundles older than 30d (or --max-per-persona, --all)
-# Telemetry: on every wab action failure we report (action, platform, reason, error-string, has_bundle, cli_version) as a wab_action_failed PostHog event so maintainers can spot platform rotations across users. NO bundle contents, NO cookies, NO DOM, NO screenshots leave the user's machine. Opt out: WONDA_TELEMETRY_DISABLED=1
+# Telemetry: on every wab action failure we report (action, platform, reason, error-string, has_bundle, cli_version) as a wab_action_failed PostHog event so maintainers can spot platform rotations across users. NO bundle contents, NO cookies, NO DOM, NO screenshots leave the user's machine. Opt out: WONDA_TELEMETRY_DISABLED=1. For server-side breakdowns, group `wab_action_failed` by `platform`, `action`, `reason`, and `has_bundle` in PostHog. Locally, `wonda wab top-failures` reads only `~/.wonda/wab/errors.jsonl` and persona-local `dom-recoveries.jsonl`, then shows count, last seen, recovered rate, bundle count, and a sample bundle id.
 wonda wab migrate-legacy                      # copy a legacy WAB-driver profile into a persona slot
 wonda wab restore <persona> [timestamp]       # restore from an hourly snapshot (--list to enumerate)
 wonda wab backup disable                      # opt out of auto-push (on by default; existing cloud backups untouched)
 wonda wab backup enable                       # opt back in (auto-push synced cookie JSON to wondercat after every disk sync)
 wonda wab backup status                       # show config + remote inventory
 wonda wab backup push [account]               # one-shot manual push for all platform bindings
-wonda wab backup pull [account]               # restore cloud cookies → ~/.wonda/<platform>-cookies/<account>.json on a fresh machine
-wonda wab backup list                         # inventory of cloud backups (metadata only)
+wonda wab backup pull [account]               # guarded restore to ~/.wonda/<platform>-cookies/<account>.json; refuses non-empty local unless --force
+wonda wab backup pull [account] --dry-run     # preview restores without writing
+wonda wab backup list                         # inventory of cloud backups, including device/provenance metadata when available
 wonda wab backup delete <plat> <persona> [acct] # remove one backup
+wonda wab cookies list                        # explicit cookie backup inventory, metadata only
+wonda wab cookies status [account]            # local cookie files plus cloud backup rows
+wonda wab cookies port <plat> <persona> [acct] --from-device <id|label> # safely port one selected cloud row to this machine
 wonda wab config set <persona> <key> <value>  # persist per-persona spawn defaults (idle-timeout, locale, visible, interactive, proxy_url, timezone, geo_lat/lon)
 wonda wab config get <persona>                # print a persona's persisted config
 ```
 
 **Local browser proxy (`proxy_url`).** By default the local WAB dials direct (your own IP). Set `wonda wab config set <persona> proxy_url managed` to route the LOCAL browser through your account's minted twin proxy, so it shares the same egress as the cloud twin (useful for IP continuity or a VPN/office/CGNAT network). A literal `socks5://…`/`https://…` value is a manual override instead; unset clears it back to direct. The proxy is optional: if minting is disabled for the environment or unavailable, the browser falls back to a direct dial.
 
-Lifecycle commands take an `--account` (e.g. `wonda wab login mathieu linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
+Lifecycle commands take an `--account` (e.g. `wonda wab login <account> linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
 
 **Anonymous capture (`record`).** `wonda wab record <url>` records a URL to webm in an ephemeral Chromium (fresh fingerprint each call, no persona, no cookies). Use it for cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check) and marketing demo capture.
 
@@ -245,7 +252,11 @@ The `--inject-js` file is wrapped in an async IIFE so top-level `await` works. I
 
 Node.js requirement: wonda needs Node >= v20 on PATH. Brew users get it via the `node` dependency; npm users have it by definition; install.sh users may need `brew install node` (or any Node distribution). If Node is missing, `wonda wab install` fetches a private copy into `~/.wonda/node/`.
 
-**Cookie cloud backup.** On by default (opt out per machine with `wonda wab backup disable`). The WAB driver pushes the synced cookie JSON for each bound platform to the wondercat backend after every wab → disk sync (and graceful shutdown); auto-push no-ops when no api_key is configured. Encrypted at rest server-side (AES-256-GCM) when `SOCIAL_COOKIES_KEY` is set, else plaintext jsonb; the wire payload is always plaintext (the server holds the key). Enables self-serve recovery from `wonda wab backup pull <account>` on a fresh machine. Per (account, platform, persona, account_label) row, last-write-wins, rate-limited to one push per 60s.
+**Cookie cloud backup.** On by default (opt out per machine with `wonda wab backup disable`). The WAB driver pushes the synced cookie JSON for each bound platform to the wondercat backend after every wab → disk sync and graceful shutdown; auto-push no-ops when no api_key is configured. Encrypted at rest server-side (AES-256-GCM) when `SOCIAL_COOKIES_KEY` is set, else plaintext jsonb; the wire payload is always plaintext because the server holds the key. Cookie values are never printed by list/status/port commands.
+
+Recovery is guarded. `wonda wab backup pull <account>` and `wonda wab cookies port <platform> <persona> [account]` refuse to overwrite a non-empty or newer local cookie file unless `--force` is passed. Forced writes create a hidden `.before-pull-*` backup first. Use `--dry-run` to inspect planned writes. When the backend exposes multiple device rows for the same platform/persona/account, use `wonda wab cookies port ... --from-device <id|label>` so the source row is explicit.
+
+Current backend compatibility: legacy servers still expose one last-write-wins row per `(account, platform, persona, account_label)`. Newer servers may include `device_id`, `device_label`, `source`, `status`, `generation`, and `provenance`; the CLI displays those fields when present and shows legacy rows as device `legacy`.
 
 Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platform action scripts under `actions/<platform>/`.
 
@@ -255,9 +266,9 @@ Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platfor
 - `--via public`: paid public-data API where a command explicitly supports it. For LinkedIn this avoids logged-in cookies and WAB profile reads, and uses the public scrape task route for `wonda linkedin profile` and `wonda linkedin enrich`.
 - `--account <name>`: which on-disk identity to use (cookie filename / persona). Persona resolution is implicit: the first `--via wab` use auto-creates a persona named after the account and (on a TTY) chains straight into login.
 
-**Defaults differ for reads vs writes.** Read commands (profile, posts, search, timeline, etc.) default to `cookies` (direct API), because that path is fast and detection-safe. Write / engagement commands (post, comment, like, follow, connect, message, repost, delete) default to `wab`, because the cookie-API path triggers anti-abuse heuristics on LinkedIn / X / Reddit at any meaningful volume. Pass `--via cookies` to a write command if you explicitly want the legacy API path (where the command supports it).
+**Defaults differ for reads vs writes.** Read commands (profile, posts, search, timeline, etc.) default to `cookies` (direct API), because that path is fast and detection-safe. Write / engagement commands (post, comment, like, follow, connect, message, mute, repost, delete) default to `wab`, because the cookie-API path triggers anti-abuse heuristics on LinkedIn / X / Reddit at any meaningful volume. Pass `--via cookies` to a write command if you explicitly want the legacy API path (where the command supports it).
 
-**Commands that require `--via wab`.** A few commands have no cookie path and only run through the Wonda Automation Browser: `wonda linkedin comment`, `wonda x delete`, and `wonda x reply --attach`. On these, the default already resolves to wab (one stderr line noting it); passing `--via cookies` explicitly errors. Reddit's writes (`vote`, `comment`, `subscribe`, `save`, `unsave`, `delete`, and subreddit `submit`) are likewise wab-only.
+**Commands that require `--via wab`.** A few commands have no cookie path and only run through the Wonda Automation Browser: `wonda linkedin comment`, `wonda linkedin reply-comment`, `wonda linkedin mute`, `wonda linkedin edit-post`, `wonda linkedin edit-comment`, `wonda linkedin delete-comment`, `wonda linkedin post --media`, `wonda x delete`, `wonda x reply --attach`, `wonda x dm send`, `wonda x dm accept`, and `wonda x dm start`. On these, the default already resolves to wab (one stderr line noting it); passing `--via cookies` explicitly errors. Reddit's writes (`vote`, `comment`, `subscribe`, `save`, `unsave`, `delete`, and subreddit `submit`) are likewise wab-only.
 
 **Per-account credentials.** Cookies live in per-account JSON files on disk:
 
@@ -274,14 +285,15 @@ Every platform command (`linkedin`, `x`, `reddit`, `instagram`), reads AND write
 - **Reads** are _paced_, never blocked: spacing is jittered to keep a profile under `read_per_min` (75/min default), holding across separate invocations.
 - **Writes** are checked against per-bucket daily caps. The LinkedIn defaults (other platforms track + count toward the total/day but have no per-type write cap by default):
 
-  | bucket                   | commands                   | safe        | max |
-  | ------------------------ | -------------------------- | ----------- | --- |
-  | outreach                 | `connect` + `send-message` | 20          | 40  |
-  | post                     | `post`                     | 3           | 5   |
-  | comment                  | `comment`                  | 10          | 20  |
-  | react                    | `like`                     | 25          | 50  |
-  | search                   | `search`, `search-posts`   | 25          | 50  |
-  | **total** (all non-read) | any of the above           | warn at 90% | 100 |
+  | bucket                   | commands                              | safe        | max |
+  | ------------------------ | ------------------------------------- | ----------- | --- |
+  | outreach                 | `connect` + `send-message` + `inmail` | 20          | 40  |
+  | post                     | `post`                                | 3           | 5   |
+  | comment                  | `comment`, `reply-comment`            | 10          | 20  |
+  | react                    | `like`                                | 25          | 50  |
+  | visit                    | `visit`                               | 15          | 30  |
+  | search                   | `search`, `search-posts`              | 25          | 50  |
+  | **total** (all non-read) | any of the above                      | warn at 90% | 100 |
 
 Caps are **SOFT by default**: an over-safe / over-max action prints a shadow-ban-risk warning to stderr and **proceeds**. Pass `--hard` (or set `mode: hard` in config) to make over-cap writes **abort** (exit 1) instead.
 
@@ -289,10 +301,10 @@ Caps are **SOFT by default**: an over-safe / over-max action prints a shadow-ban
 
 ```bash
 wonda actions                        # rolling-24h usage per profile vs caps, as JSON
-wonda actions --persona natty        # one profile
+wonda actions --persona <persona>        # one profile
 wonda actions --platform linkedin    # filter to one platform
 wonda actions sync                   # flush local action/health events to your Wonda account
-wonda actions sync --persona natty   # flush one profile's ledgers
+wonda actions sync --persona <persona>   # flush one profile's ledgers
 wonda linkedin post "…" --hard       # enforce caps as hard limits for this command
 ```
 
@@ -368,27 +380,76 @@ wonda linkedin profile competitor-vanity-name                  # LinkedIn profil
 
 Content skills are step-by-step guides for common content types. Each skill tells you exactly which models, prompts, and editing operations to use — and in what order. ALWAYS check skills before building from scratch.
 
+Skills are **server-hosted, per-account, and editable** (the same model as `wonda brand save`) — you don't download a folder of `.md` files you own. Wonda ships a canonical set of **default** skills, served read-only as the fallback. Pull them live for a task; fork a default into your own copy when you want to tweak it; Wonda keeps full version history. `skill list` shows your effective skills (defaults overlaid with your own edits), and flags any fork whose default has since changed.
+
 ```bash
-wonda skill list                                # Browse all content skills
-wonda skill get <slug>                          # Full step-by-step guide for a skill
+wonda skill list                                # Browse your effective skills (defaults + your own); forks with a changed default are flagged
+wonda skill get <slug>                          # Pull a skill's full step-by-step guide live to stdout
 ```
 
-**Full skill index:**
+<!-- SKILLS_TABLE_START -->
 
-| Slug                      | Description                                                                                                                             | Input                       |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| product-video             | Product/scene video — prompt library for all categories                                                                                 | optional product image      |
-| ugc-talking               | Talking-head UGC — single clip, two-angle PIP, or 20s+ with B-roll                                                                      | optional reference          |
-| ugc-reaction-batch        | Batch TikTok-native UGC reactions with viral strategy                                                                                   | optional product image      |
-| tiktok-ugc-pipeline       | Scrape viral reel → generate 5 UGC → post as drafts                                                                                     | reel or TikTok URL          |
-| ugc-dance-motion          | Dance/motion transfer                                                                                                                   | image + video               |
-| marketing-brain           | Marketing strategy brain — hooks, visuals, ads                                                                                          | user brief                  |
-| reddit-subreddit-intel    | Scrape top posts, analyze virality, generate ideas                                                                                      | subreddit + product         |
-| twitter-influencer-search | Find X influencers and amplifiers                                                                                                       | competitor/niche keywords   |
-| tiktok-slideshow-carousel | 3-slide TikTok carousel — hook, bridge, product reveal                                                                                  | app screenshot + audience   |
-| creative-static-ads       | Single-frame static ad images — 6 conversion pillars, 8 archetypes, 8 psychological hooks                                               | product + optional image    |
-| ffmpeg                    | All local ffmpeg workflows — trim, audio swap, captions, social formats, scene split, silence cut, frame extraction, analysis artifacts | local video path or mediaId |
-| image-edit                | All image edit paths — img2img, background removal, crop, text overlay, vectorize                                                       | image mediaId or local path |
+**Default skill catalog** (live source: `wonda skill list`, which also shows your own forks/edits and flags drift):
+
+**video**
+
+| Slug                | What it does                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| product-video       | Product/scene video from an image or from scratch                                                                      |
+| split-screen-demo   | 5-second 16:9 LinkedIn loop, source doc to designed slides comparison ending on a CTA that crosses out the competitors |
+| tiktok-ugc-pipeline | Reverse-engineer a viral reel, generate 5 variations, auto-post                                                        |
+| ugc-dance-motion    | Dance and motion transfer video from image + reference                                                                 |
+| ugc-hook-brainstorm | 25 graded scroll-stopping UGC hooks, hot casting, iPhone 16 aesthetic, psychological levers                            |
+| ugc-reaction-batch  | Batch produce TikTok-native UGC reaction videos                                                                        |
+| ugc-talking         | Talking-head UGC ad, single clip, two-angle PIP, or long-form 20s+                                                     |
+
+**image**
+
+| Slug                              | What it does                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| creative-static-ads               | High-converting single-frame static ads, 6 conversion pillars, 8 format archetypes, 8 psychological hooks                                                                                                                                                                                            |
+| linkedin-media-premium-generation | Render a single stop-the-scroll LinkedIn hero card (1920x1080) using a layered visual vocabulary: italic-serif headline, real product screenshot, paper grain, floating social-proof cards. Six layout patterns sharing the same DNA. Wonda CLI sourcing for real quotes from X / LinkedIn / Reddit. |
+| premium-static-ads                | Pixel-perfect HTML+Playwright static ads with brand extraction (`wonda brand extract`). Real fonts, exact tokens, reproducible templates                                                                                                                                                             |
+| tiktok-slideshow-carousel         | 3-5 slide TikTok carousel that looks organic but promotes your product, hook, bridge, reveal                                                                                                                                                                                                         |
+
+**social-research**
+
+| Slug                      | What it does                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| analyze-reel              | Analyze a viral reel or TikTok, viral breakdown + 5 adapted content ideas                                                             |
+| linkedin-engager-intel    | Pull every commenter + reactor on a LinkedIn post with profile URLs for warm outreach                                                 |
+| linkedin-icp-qualify      | Enrich LinkedIn engagers with their current employer (industry, headcount, HQ, description) so you can filter for ICP fit             |
+| linkedin-social-listening | Paste any keyword, pull every recent post that mentions it, then enrich each post's engagers into an ICP-qualified outreach shortlist |
+| reddit-subreddit-intel    | Scrape top posts, analyze virality patterns, generate post ideas                                                                      |
+| twitter-influencer-search | Find micro-influencers and amplifiers for product launches                                                                            |
+
+**strategy**
+
+| Slug                 | What it does                                                                                                                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| linkedin-post-system | Turn a raw idea into a LinkedIn post that matches proven formats and the user's exact voice. Bootstraps the user's voice corpus via wonda linkedin profile/posts, maps the idea to one of 28 proven content formats, drafts 2 variants with anti-AI-slop guardrails. |
+| marketing-brain      | Strategy brain for hooks, visuals, ads, and competitive analysis                                                                                                                                                                                                     |
+
+**utility**
+
+| Slug                   | What it does                                                                                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| extract-apply-style    | Extract a visual style from any image, then generate new subjects in that style                                                                                 |
+| ffmpeg                 | Local deterministic media transforms, trim, replace audio, burn captions, social formatting, scene splitting, silence cut, frame extraction, analysis artifacts |
+| image-edit             | Edit existing images, img2img, background removal, crop, text overlay, vectorize                                                                                |
+| slide-generation       | Generate branded slide decks from any content source, codebase, Notion notes, or Google Docs                                                                    |
+| tiktok-caption-presets | TikTok-style textOverlay and animatedCaptions presets applied via wonda edit --preset                                                                           |
+
+<!-- SKILLS_TABLE_END -->
+
+**Editing skills (optional).** When a default doesn't quite fit, fork and edit it instead of working around it. Editing a default forks it into your account automatically:
+
+```bash
+wonda skill create my-ugc --from ugc-talking    # Fork a default into your own editable copy
+wonda skill edit my-ugc --editor                # Record a new version (opens $EDITOR; or --file <md> / stdin)
+wonda skill diff <slug>                          # See what changed in the default since you forked it (drift)
+wonda skill refactor <slug> --editor             # Re-base your fork onto the updated default, clears the drift hint
+```
 
 **If a skill matches** → `wonda skill get <slug>`, read it, adapt to context, execute each step.
 
@@ -1158,6 +1219,10 @@ wonda analytics instagram
 wonda analytics tiktok
 wonda analytics meta-ads
 
+# Organic owned-post analytics use platform-specific read commands:
+# wonda x analytics, wonda linkedin analytics, wonda reddit analytics.
+# The global analytics group above is for connected marketing APIs.
+
 # Scrape competitors
 wonda scrape social --handle @nike --platform instagram --wait
 wonda scrape social-status <taskId>                   # Get results of a social scrape
@@ -1210,15 +1275,18 @@ Supports reads, writes, and social graph.
 ```bash
 # Auth setup (run `wonda x auth --help` for details)
 wonda x auth set --auth-token <token> --ct0 <ct0>
-wonda x auth set --account burner --auth-token <...> --ct0 <...>  # multi-account
+wonda x auth set --account <name> --auth-token <...> --ct0 <...>  # multi-account
 wonda x auth check                                              # raw probe, see warning above
 wonda x auth check --account <name> --via wab               # safe: routes via account's WAB session
 
 # Read
-wonda x search "sneakers" -n 20                     # Search tweets
+wonda x search "sneakers" -n 20                     # Search tweets (sort: latest, current, top; time: day, week, month, year, all)
+wonda x search "sneakers" --sort top --time week -n 20  # Top tweets from the last week
 wonda x user @nike                                   # User profile
 wonda x user-tweets @nike -n 20                      # User's recent tweets
 wonda x read <tweet-id-or-url>                       # Single tweet
+wonda x analytics <tweet-id-or-url>                  # Tweet metrics: viewCount, likeCount, retweetCount, replyCount
+wonda x insights <tweet-id-or-url>                   # Alias for x analytics
 wonda x replies <tweet-id-or-url>                    # Replies to a tweet
 wonda x thread <tweet-id-or-url>                     # Full thread (author's self-replies)
 wonda x home                                         # Home timeline (--following for Following tab)
@@ -1229,8 +1297,13 @@ wonda x followers @handle                            # A user's followers
 wonda x lists @handle                                # User's lists (--member-of for memberships)
 wonda x list-timeline <list-id-or-url>               # Tweets from a list
 wonda x news --tab trending                          # Trending topics (tabs: for_you, trending, news, sports, entertainment)
+wonda x mentions -n 20                               # Recent replies and @mentions directed at your account
+wonda x dm inbox -n 20                               # X DM conversations, default cookie path
+wonda x dm requests -n 20                            # X DM message requests, default cookie path
+wonda x dm read <conversation-id> -n 50              # Messages in one conversation
+wonda x dm read <conversation-id> --via wab          # Same read routed through the WAB browser session
 
-# Write (defaults to --via wab; pass --via cookies for the internal-API path on secondary accounts)
+# Write (tweet/reply/engagement defaults to --via wab; X DM sends are wab-only)
 wonda x tweet "Hello world"                          # Post a tweet
 wonda x tweet "Hello world" --account <name> --via wab  # Full stealth via real browser
 wonda x tweet "Hello world" --attach ~/clip.mp4      # Attach image/gif/video (up to 4)
@@ -1242,6 +1315,14 @@ wonda x unretweet <tweet-id-or-url>                  # Unretweet
 wonda x follow @handle                               # Follow
 wonda x unfollow @handle                             # Unfollow
 wonda x feed-engage --authors "a,b" --duration 5m    # Scroll the feed and like posts from these authors (wab-only)
+wonda x feed-engage --keywords "wonda alternative" --reply --max-reply 3  # Monitor search results, gate relevance, reply via WAB
+wonda x dm send <conversation-id> "Hey, quick note"  # Send in an existing DM thread, wab-only
+wonda x dm send <conversation-id> "Hey" --dry-run    # Type only, do not click Send
+wonda x dm accept <conversation-id> --dry-run        # Open a message request without accepting it
+wonda x dm accept <conversation-id>                  # Accept an incoming DM request, wab-only
+wonda x dm start @handle --text "Hey, quick note"    # Start or reuse a DM by handle, wab-only
+wonda x dm passcode set --account <name>             # Save encrypted XChat passcode for that account
+wonda x dm passcode status --account <name>          # Show whether a passcode is configured
 
 # Maintenance
 wonda x refresh-ids                                  # Refresh cached GraphQL query IDs from X's JS bundles
@@ -1249,10 +1330,53 @@ wonda x refresh-ids                                  # Refresh cached GraphQL qu
 
 All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`, `--delay <ms>`.
 
+`wonda x user` includes additive `emails` and `links` fields when the member has published explicit contact details in their public bio or X exposes expanded URL entities for that profile. These fields are read-only and equivalent to manually reading the profile. No inferred emails, enrichment data, storage, or DOM scraping is involved.
+
 **Tweet modes:** The `tweet` command has two transports:
 
 - **`--via cookies` (internal API):** X's internal GraphQL (`CreateTweet` for ≤280 chars, `CreateNoteTweet` for long-form Premium). Fast (<1s), supports `--attach` for media. Occasionally fails with error 226 when X rotates query IDs or feature flags. When that happens, recapture via `twitter-tone-research/_artifacts/scripts/capture-ct-bw.mjs` and bump the three knobs in `xclient/`.
 - **`--via wab` (default for writes):** Routes through the account's WAB Chromium (auto-spawned on first `--via wab` use), opens x.com compose, types with human-style jitter, clicks Post. Supports `--attach` (image/gif/video, up to 4); files are driven through the hidden compose input via Playwright's `setInputFiles`, no native picker dialog opens; the script waits for X's upload pipeline to finalize (up to 5 min for video) before submitting. Zero fingerprinting risk. Slower (~10s text, ~30-90s with video) but fully drift-proof: no queryIds, feature flags, or request shape to maintain. The stealth browser + Chromium install once via `wonda wab install` (~315 MB, one-time, idempotent). Cookies live in `~/.wonda/x-cookies/<account>.json`, bound to the account's persona via `account-bindings.json`. `wonda x reply --attach` is wab-only (no cookie path).
+
+### Inbound engagement
+
+Received engagement means inbound activity on the twin's own content: replies, mentions, comments, and DMs. This is the reverse direction of outbound posting, liking, and following.
+
+It is not keyword monitor, not sent-invite/outreach acceptance tracking, and not the outbound action ledger. Use platform search commands for keyword monitoring. Use `wonda actions` for outbound action accounting.
+
+```bash
+wonda inbound                                      # New inbound items for every local persona
+wonda inbound --persona brubakerwise              # One persona
+wonda inbound --platform x -n 20                  # Only X mentions/replies
+wonda inbound --platform linkedin                 # LinkedIn notifications
+wonda inbound --platform reddit                   # Reddit classic inbox
+wonda inbound --all                               # Dump fetched items without high-water diff or state write
+```
+
+`wonda inbound` fans out direct read clients only: X mentions/replies, LinkedIn notifications, and Reddit classic inbox. Output is always normalized JSON:
+
+```json
+{
+  "new_count": 1,
+  "items": [
+    {
+      "persona": "brubakerwise",
+      "platform": "x",
+      "account": "brubakerwise",
+      "kind": "reply",
+      "author": "someone",
+      "text": "Useful point",
+      "target_id": "2069000000000000000",
+      "item_id": "2069000000000000001",
+      "timestamp": "2026-06-22T12:00:00Z",
+      "url": "https://x.com/someone/status/2069000000000000001"
+    }
+  ]
+}
+```
+
+By default it persists a high-water mark per persona/platform/account at `~/.wonda/wab/personas/<persona>/inbound-state.json` and only emits items newer than the last run. Corrupt or missing state is treated as a first run. `--all` bypasses state reads and writes and returns the full fetched set.
+
+**X DMs:** `wonda x dm inbox`, `wonda x dm requests`, and `wonda x dm read` read through the cookie-backed `xclient` path by default and can use `--via wab` for browser-session transport parity. `requests` returns the untrusted/message-request inbox so recipient-side acceptance can be handled explicitly. `wonda x dm send`, `wonda x dm start`, and `wonda x dm accept` are WAB-only DOM writes: sends open the real X messages UI, type into `[data-testid="dmComposerTextInput"]`, and click the composer send button; accept opens the request thread through Chat and clicks the visible Accept/Allow control. `start` verifies that the selected suggestion's screen name equals the requested handle before sending, and WAB DM writes verify the active X browser account when `--account` or persona bindings provide one. If `x dm send` or `x dm start` fails with `recipient_cannot_receive_dm`, X refused the DM before send. Check that the recipient can receive DMs from the sender: mutual follow/connect may be required, and the recipient may need to accept any pending message request before retrying. If X shows an encrypted XChat passcode gate, store the passcode with `wonda x dm passcode set --account <name>`; it is encrypted locally using the same local-secret pattern as cookie-adjacent storage and is never printed or included in failure bundles. Deeper XChat/Juicebox message decrypt/encrypt support remains unsupported until X exposes a thread that needs it.
 
 ### LinkedIn
 
@@ -1282,27 +1406,46 @@ wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your connections
+wonda linkedin sent-invitations                      # Pending sent invites + audit reconciliation; cookies default, --via wab supported
+wonda linkedin invitations                           # Incoming connection requests with notes and sharedSecret (cookie-only read)
 wonda linkedin connection-status johndoe janedoe     # Per-member: connected / pending (in|out) / not_connected (cookie-only)
 wonda linkedin saves                                 # Your saved posts (My Items → Saved posts; --all, --enrich for likes/comments)
+wonda linkedin analytics <activity-id>               # Owned post analytics: impressions, uniqueViewers, engagements, profileViews when exposed
+wonda linkedin analytics --profile                   # Profile-view analytics when LinkedIn exposes it for the account
 wonda linkedin reactions <activity-id>               # Reactions with reactor profiles + type
+wonda linkedin comment-reactors <comment-url-or-activityId:commentId> # Reactions on a specific comment with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into the WAB profile (one-time + on rotation)
 wonda linkedin comments <activity-id> --account <name> --via wab  # Commenters with profile + vanity (auto-spawns WAB)
-wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (DOM scrape via WAB; for social listening see content-skills/linkedin-social-listening.md)
+wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (DOM scrape via WAB; for social listening run `wonda skill get linkedin-social-listening`)
 
 # WAB lifecycle (see `wonda wab --help` for the full surface: start/stop/status/install/bind/sync-cookies/logs)
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON; --company-detail=false skips company page lookups)
 wonda linkedin enrich-engagers --activity-id <id> --profile-source public  # Keep engager collection logged-in, use paid public profile detail
 
 # Write
+wonda linkedin visit <vanity-name> --account <name>  # Visit a real profile page in the WAB, dwell, and optionally notify the target
 wonda linkedin connect <vanity-name> --message "Hey!" # Send connection request with note
 wonda linkedin connect <vanity-name> -m "Hey!" --account <name> --via wab  # Full stealth via the account's persona
 wonda linkedin comment <activity-id> --account <name> # Add a comment (wab-only: needs SDUI render state)
+wonda linkedin reply-comment <activity-id> <comment-id> "Good point." --account <name> # Reply under a specific comment (wab-only)
+wonda linkedin mute <vanity-name-or-url> --account <name> # Mute a member's posts in the actor's feed (wab-only; keeps the connection)
+wonda linkedin edit-post <activity-id-or-url> "Updated body" # Edit your own post (wab-only: menu -> Edit post -> Save -> verify)
+wonda linkedin edit-comment <activity-id-or-url> <comment-id> "Updated comment" # Edit your own comment (wab-only: comment menu -> Edit -> Save -> verify)
 wonda linkedin like <activity-urn>                   # Like a post
+wonda linkedin like <activity-urn> --comment <commentId>        # Like a specific comment (wab-only)
+wonda linkedin like <activity-urn> --comment <commentId> --reaction love  # React to a specific comment
 wonda linkedin unlike <activity-urn>                 # Remove a like
+wonda linkedin unlike <activity-urn> --comment <commentId>      # Remove your reaction from a specific comment (wab-only)
 wonda linkedin send-message <conversation-urn> "Hi!" # Send a message
+wonda linkedin inmail <vanity-name> --message "Hi!" --subject "Quick question" # Native LinkedIn InMail (wab-only)
 wonda linkedin post "Excited to announce..."         # Create a post
+wonda linkedin post "A quick visual note" --media ./image.png --via wab # Create a post with media
 wonda linkedin delete-post <activity-id>             # Delete a post
+wonda linkedin delete-comment <comment-url-or-activityId:commentId> # Delete your own comment (WAB: comment menu -> Delete -> confirm -> verify)
 wonda linkedin feed-engage --authors "a,b" --duration 5m  # Scroll the feed and like posts from these authors (wab-only)
+wonda linkedin feed-engage --keywords "short form video" --reply --max-reply 3  # Monitor content search, gate relevance, comment via WAB
+wonda linkedin feed-engage --authors "a,b" --engage-comments --max-comment-engage 2  # Also react to matching comments on engaged posts
+wonda linkedin engage-commenters --post <activity-id-or-url> --actions like,reply,connect --reply-text "Good point." --connect-note "I liked your perspective here." --max-commenters 25 --duration 3m  # Read a post's commenters, then like, reply, or connect (paid, WAB writes)
 
 # Account creation (wab-only, flagged: linkedinAccountCreationEnabled)
 wonda linkedin signup --persona <name> --random                                     # Create a brand-new account end-to-end
@@ -1313,6 +1456,10 @@ wonda linkedin signup --persona <name> --resume code --email <addr>             
 
 Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--delay <ms>`.
 
+`wonda linkedin profile` includes additive `emails`, `websites`, `phone`, and `twitter` fields when the member exposes them in LinkedIn's Contact info. The contact-info read uses the same logged-in Voyager cookie and CSRF path as profile reads, is best-effort when hidden or rate-limited, and is equivalent to manually opening the Contact info overlay. It does not infer, enrich, persist, or batch-harvest contacts.
+
+**LinkedIn profile visit warm-up:** `wonda linkedin visit <vanity-or-url> --account <name>` is WAB-only and intentionally separate from `wonda linkedin profile`. `profile` is a stealth data read and does not fire viewed-your-profile. `visit` opens the real `/in/<vanity>/` page in the persona browser, dwells for roughly 6-20s by default, makes a light scroll pass unless `--no-scroll` is set, and returns `{ ok, status, profile, dwellMs, scrolled }`. Private or anonymous LinkedIn profile-viewing settings can suppress the target notification.
+
 **LinkedIn account creation:** `wonda linkedin signup` provisions a brand-new LinkedIn account: it mints a throwaway mailbox (or uses `--email`), drives the join flow (email plus password, name, emailed verification code, profile) in a headful WAB window, fetches the verification PIN from the inbox, then binds the persona and syncs cookies so LinkedIn reads and writes route through the new account. Gated by the `linkedinAccountCreationEnabled` flag (server-evaluated preflight: `GET /linkedin/signup/enabled`). Bind a mobile or residential proxy to the persona first (`wonda wab config set <persona> proxy_url socks5://...`): LinkedIn shadowbans accounts born on datacenter IPs even harder than Reddit. LinkedIn frequently inserts a captcha or "security verification" puzzle the flow cannot pass automatically; when a field cannot be located the flow pauses and leaves the window on that screen, so finish by hand then re-run with `--resume <step>` (`account|name|code|profile|persist`). On success it prints `{name, email, password, persona, account}` plus a ready-to-paste `op item create` block for the "LinkedIn logins" vault.
 
 **Connection request modes:** The `connect` command has two transports:
@@ -1320,11 +1467,15 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 - **`--via cookies` (API):** Voyager REST API with fingerprint mitigations (profile visit, drawer warm-up, connect). Fast (~3s), supports notes via `customMessage`.
 - **`--via wab`:** Routes through the account's persona Chromium (auto-spawned) for full stealth via DOM dispatch. Zero fingerprinting risk. Slower (~10s) but fully safe. Use when you need extra protection. The stealth browser + Chromium install once via `wonda wab install` (~315 MB, idempotent). The persona reuses its persistent profile under `~/.wonda/wab/personas/<persona>/profile`. Cookies live in `~/.wonda/linkedin-cookies/<account>.json`, bound to the persona via `account-bindings.json`; rotating via `wonda linkedin auth set --account <name>` pushes the new cookies into the live Chromium if it's running.
 
+**LinkedIn InMail:** `wonda linkedin inmail <vanity-or-url> --message <body> [--subject <subject>] [--yes-consume-credit] [--dry-run]` drives LinkedIn's native InMail composer in WAB only. It is not `connect` and not `send-message`; first-degree recipients are refused with a pointer to `wonda linkedin send-message`. Open Profile / free InMail can send without credit confirmation. If LinkedIn indicates one InMail credit will be consumed, the command stops with `sent:false` and exits 0 unless `--yes-consume-credit` is provided. `--dry-run` fills the composer and stops before Send.
+
 **LinkedIn public profile enrichment:** `wonda linkedin enrich <profile-url-or-vanity...>` defaults to `--via cookies`, uses the local logged-in profile read path one profile at a time, reuses `_artifacts/linkedin-cache`, adds jitter between misses, aborts on 429-style rate-limit signals, and rejects more than 25 inputs. Use `--via public` for paid public enrichment through `POST /api/v1/scrape/linkedin-profiles`, polling `GET /api/v1/scrape/linkedin-profiles/{taskId}` until completion unless `--no-wait` is set. Cancel a running paid scrape with `wonda scrape cancel <taskId>`. Public mode supports `--force-refresh`, `--timeout 10m`, `--idempotency-key`, and `--output json|table`. The single-profile `wonda linkedin profile --via public` path uses the same paid route and also supports `--force-refresh`, `--timeout`, and `--idempotency-key`.
+
+**LinkedIn sent invitation tracking:** `wonda linkedin sent-invitations` is read-only and defaults to `--via cookies`. It lists live pending outgoing invites and, by default, reconciles them with the local WAB connect audit to label audited targets as `accepted`, `pending`, or `withdrawn`; pass `--reconcile=false` for the raw paginated pending list or `--no-connection-check` to skip per-target connection-status reads. `--via wab` routes the same reads through the account persona. LinkedIn's sent-list Voyager endpoints currently churn, so the command falls back to the read-only sent-invitations manager page payload when Voyager rejects the sent list. `--via public` and `--via api` are not supported.
 
 **Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--company-detail=false` to skip company page lookups and keep only inlined employer identity (`name`, `urn`, `universalName`). Use `--max-profiles N` to cap the batch (default 100, hard ceiling 100 unless `--override-max-profiles` is set) and `--out file.json` to write to disk. `--profile-source cookies|public` controls only per-profile detail enrichment; engager collection still uses logged-in LinkedIn access.
 
-For ICP qualification of post engagers, see `content-skills/linkedin-icp-qualify.md`.
+For ICP qualification of post engagers, run `wonda skill get linkedin-icp-qualify`.
 
 ### Instagram
 
@@ -1342,8 +1493,8 @@ Transports are per-operation capabilities: `saved` and `comments` are cookies-on
 # Auth setup — local cookie identity (run `wonda instagram auth --help` for details)
 wonda instagram auth set --sessionid <value>                # Just the sessionid cookie (simplest)
 wonda instagram auth set --cookies "$(pbpaste)"             # Full DevTools cookie: header (also captures ds_user_id)
-wonda instagram auth set --account burner --sessionid <v>   # Multi-account
-wonda instagram auth set --account burner --sessionid <v> --persona burner  # Also bind to a WAB persona
+wonda instagram auth set --account <name> --sessionid <v>   # Multi-account
+wonda instagram auth set --account <name> --sessionid <v> --persona <persona>  # Also bind to a WAB persona
 
 # Read (cookies)
 wonda instagram saved                                       # Your saved posts (--all to walk all pages)
@@ -1381,8 +1532,8 @@ Reddit's transport is fixed per command kind, so `--via` is mostly not yours to 
 ```bash
 # Auth setup (run `wonda reddit auth --help` for details)
 wonda reddit auth set --cookies "$(pbpaste)"                         # Paste full DevTools cookie: header
-wonda reddit auth set --account burner-1 --cookies "$(pbpaste)"      # Multi-account
-wonda reddit auth set --account burner-1 --from-keychain             # Opt-in: read from browser Keychain
+wonda reddit auth set --account <name>-1 --cookies "$(pbpaste)"      # Multi-account
+wonda reddit auth set --account <name>-1 --from-keychain             # Opt-in: read from browser Keychain
 wonda reddit auth check
 
 # Read (direct tls-client, --account picks the session for logged-in views)
@@ -1395,6 +1546,7 @@ wonda reddit user spez                                  # User profile
 wonda reddit user-posts spez --sort top                 # User's posts
 wonda reddit user-comments spez                         # User's comments
 wonda reddit post <id-or-url> -n 50                     # Post with comments
+wonda reddit analytics <id-or-url>                      # Owner viewCount plus public score, upvoteRatio, commentCount
 wonda reddit trending --sort hot                        # Popular/trending posts
 wonda reddit home --sort best                           # Your home feed (requires auth)
 wonda reddit saved                                      # Your saved posts + comments (requires auth; --all to walk all pages)
@@ -1403,18 +1555,20 @@ wonda reddit inbox                                      # Classic notifications:
 wonda reddit inbox --unread                             # Only unread; --type mentions for mentions only
 
 # Write (wab-only via the account's persona; --account selects the identity)
-wonda reddit submit marketing --title "Great tool" --text "Check this..." --account burner-1   # Subreddit text post (DOM)
-wonda reddit submit u_<your-handle> --title "..." --text "..." --account burner-1               # Profile self-post (tls-client / cookies only)
-wonda reddit submit marketing --title "..." --url "https://..." --account burner-1              # Link post (tls-client / cookies only)
-wonda reddit comment t3_<post-id> --text "Nice post!" --account burner-1
-wonda reddit comment t1_<comment-id> --text "..." --post-id t3_<post-id> --account burner-1 # Nested reply (needs parent post-id)
-wonda reddit vote <fullname> --up --account burner-1     # Upvote (--down, --unvote)
-wonda reddit vote t1_<comment-id> --up --post-id t3_<post-id> --account burner-1
-wonda reddit subscribe marketing --account burner-1      # Subscribe (--unsub to unsubscribe)
-wonda reddit save <fullname> --account burner-1          # Save a post or comment (--post-id for t1_*)
-wonda reddit unsave <fullname> --account burner-1
-wonda reddit delete <fullname> --account burner-1        # Delete your own post or comment
+wonda reddit submit marketing --title "Great tool" --text "Check this..." --account <name>-1   # Subreddit text post (DOM)
+wonda reddit submit marketing --title "..." --text "..." --flair "Discussion" --account <name>-1 # Subreddit text post with flair
+wonda reddit submit u_<your-handle> --title "..." --text "..." --account <name>-1               # Profile self-post (tls-client / cookies only)
+wonda reddit submit marketing --title "..." --url "https://..." --account <name>-1              # Link post (tls-client / cookies only)
+wonda reddit comment t3_<post-id> --text "Nice post!" --account <name>-1
+wonda reddit comment t1_<comment-id> --text "..." --post-id t3_<post-id> --account <name>-1 # Nested reply (needs parent post-id)
+wonda reddit vote <fullname> --up --account <name>-1     # Upvote (--down, --unvote)
+wonda reddit vote t1_<comment-id> --up --post-id t3_<post-id> --account <name>-1
+wonda reddit subscribe marketing --account <name>-1      # Subscribe (--unsub to unsubscribe)
+wonda reddit save <fullname> --account <name>-1          # Save a post or comment (--post-id for t1_*)
+wonda reddit unsave <fullname> --account <name>-1
+wonda reddit delete <fullname> --account <name>-1        # Delete your own post or comment
 wonda reddit feed-engage --authors "a,b" --duration 5m   # Scroll the feed and upvote posts from these authors (wab-only)
+wonda reddit feed-engage --keywords "ai video,ugc ads" --subreddits SaaS,marketing --reply --max-reply 3  # Monitor scoped searches, gate relevance, comment via WAB
 
 # Account creation (wab-only, flagged: redditAccountCreationEnabled)
 wonda reddit signup --persona <name> --random                                       # Create a brand-new account end-to-end
@@ -1422,13 +1576,29 @@ wonda reddit signup --persona <name> --email <addr> --username <handle> --passwo
 wonda reddit signup --persona <name> --resume credentials                           # Resume after a manual step
 ```
 
-Add `--dry-run` on a subreddit `comment` or `submit` to type into the composer but not click Post (useful for review). It is DOM-only, so it does not apply to profile self-posts or link posts.
+`wonda reddit user` includes additive `emails` and `links` fields when the user has published explicit contact details in their public About text. These fields are read-only and equivalent to manually reading the profile. No inferred emails, enrichment data, storage, or DOM scraping is involved.
+
+Add `--dry-run` on a subreddit `comment` or `submit` to type into the composer but not click Post (useful for review). It is DOM-only, so it does not apply to profile self-posts or link posts. For subreddit submits, pass `--flair "<label>"` to select post flair in the composer. Flair labels match case-insensitively with normalized whitespace, first by exact label and then by contains fallback. If a subreddit requires flair and it is omitted, or if the requested flair does not exist, the command fails with the available flair labels. `--flair` is not supported with profile self-posts or `--url` link posts.
 
 `wonda reddit signup` provisions a brand-new Reddit account: it mints a throwaway mailbox (or uses `--email`), drives the 5-stage register form (email, emailed code, username plus password, age, interests) in a headful WAB window, fetches the verification code from the inbox subject line, then binds the persona and syncs cookies so reddit reads and writes route through the new account. Gated by the `redditAccountCreationEnabled` flag (server-evaluated preflight: `GET /reddit/signup/enabled`). Bind a mobile or residential proxy to the persona first (`wonda wab config set <persona> proxy_url socks5://...`): Reddit shadowbans accounts born on datacenter IPs. If a field cannot be located the flow pauses and leaves the window on that screen; finish by hand, then re-run with `--resume <step>`. On success it prints `{username, email, password, persona}` plus a ready-to-paste `op item create` block for the "Reddit logins" vault.
 
 Paginated commands support: `-n <count>`, `--after <cursor>`, `--all`, `--max-pages`, `--delay <ms>`.
 
-**Feed-engage** (`wonda {linkedin,x,reddit,instagram} feed-engage`): scroll the home feed like a human and engage only the posts that scroll past from your target authors. On reddit that engagement is an upvote, on the others a like. It is WAB-only (it drives a live browser scroll + click through the account's persona, so there is no cookie path) and opportunistic: it never opens profiles or searches, it just rides the feed and acts when a target's post appears. Pass the targets with `--authors "alice,bob"` (comma-separated handles/vanities/usernames, leading `@` and `u/` are stripped) or `--authors-file <path>` (one author per line, local use only). `--duration` caps the wall-clock browse time (e.g. `5m`, `90s`, default `2m`) and `--max-engage` caps the number of successful likes/upvotes (default `8`); whichever limit hits first stops the run. Pacing is human (eased scrolling, randomized dwell, jittered cursor motion), so let it run for the full duration rather than expecting an instant result.
+**Feed-engage author mode** (`wonda {linkedin,x,reddit,instagram} feed-engage`): scroll the home feed like a human and engage only the posts that scroll past from your target authors. On reddit that engagement is an upvote, on the others a like. It is WAB-only (it drives a live browser scroll + click through the account's persona, so there is no cookie path) and opportunistic: it never opens profiles or searches, it just rides the feed and acts when a target's post appears. Pass the targets with `--authors "alice,bob"` (comma-separated handles/vanities/usernames, leading `@` and `u/` are stripped) or `--authors-file <path>` (one author per line, local use only). `--duration` caps the wall-clock browse time (e.g. `5m`, `90s`, default `2m`) and `--max-engage` caps the number of successful likes/upvotes (default `8`); whichever limit hits first stops the run. Pacing is human (eased scrolling, randomized dwell, jittered cursor motion), so let it run for the full duration rather than expecting an instant result.
+
+LinkedIn author mode can also opt into comment reactions with `--engage-comments`: by default it reacts only to comments from `--authors`, `--engage-comments-from any` includes all visible comments, and `--max-comment-engage` caps comment reactions per engaged post (default `3`).
+
+**LinkedIn engage-commenters** (`wonda linkedin engage-commenters`): read commenters on one LinkedIn post, then run the selected per-commenter actions in order: `like`, `reply`, `connect`. Pass the post with `--post <activity-id|urn|url>`. `--actions` accepts `like,reply,connect` and defaults to `like`; `--reply-text` is required when `reply` is selected; `--connect-note` is optional; `--max-commenters` defaults to `25`; `--duration` defaults to `3m`; `--dry-run` resolves targets and opens controls/composers without submitting writes. Access tier: paid/WAB. Transport: commenter reads use the established LinkedIn DOM comments path; every write uses WAB DOM primitives.
+
+**Feed-engage monitor mode** (`wonda {linkedin,x,reddit} feed-engage --keywords ...`): run one bounded keyword/intent monitor pass, score unseen candidates with `/text/generate`, and optionally generate persona replies with `/text/generate`. `--keywords` enables monitor mode and is mutually exclusive with `--authors` and `--authors-file`. Reddit supports `--subreddits SaaS,marketing` to scope search. Without `--reply`, monitor mode is read-only and prints candidates plus relevance verdicts. With `--reply --dry-run`, it generates reply text but posts nothing and leaves the ledger unchanged. With `--reply`, it posts through DOM/WAB writers only: Reddit comment composer, X reply composer, and LinkedIn comment composer. Reads use cookies/tls-client where available: Reddit search and X search use the platform clients; LinkedIn content search uses the existing WAB DOM `search-posts` flow because LinkedIn content search is not reliable through the cookie API. Safety controls: `--max-scan` (default 50), `--relevance-threshold` (default 0.7), `--max-reply` (default 3), `--per-day-cap` (default 8), and a persistent dedupe ledger under `~/.wonda/reply-ledger/`. Generated public replies are post-processed to remove em dashes. Monitor mode is not supported for Instagram.
+
+### Cross-platform DM coverage
+
+| Platform | Read inbox | Read conversation | Send existing thread | Start or cold-DM                   |
+| -------- | ---------- | ----------------- | -------------------- | ---------------------------------- |
+| LinkedIn | Yes        | Yes               | Yes                  | Yes, via profile/message flow      |
+| Reddit   | Yes        | Yes               | Yes                  | Yes, via `wonda reddit chat start` |
+| X        | Yes        | Yes               | Yes                  | Yes, via `wonda x dm start`        |
 
 ### Reddit chat / DMs
 
@@ -1471,15 +1641,21 @@ wonda twin resume <persona>                              # Resume a paused sessi
 wonda twin needs-auth <persona>                          # Flag a session as needing re-auth
 wonda twin recover <persona>                             # Clear an ACTIVE critical safety signal (captcha / unusual-activity / account-restricted) AFTER you have resolved it in-browser. Those criticals do NOT change the twin status, so the safety gate hard-blocks the persona with NO auto-resume until you clear it; this appends a 'recovered' marker the gate reads to stop treating the critical as active. A security checkpoint / needs_auth is cleared by re-login (wonda twin login) instead, not this. -> { recovered, clearedSignalType, persona }
 wonda twin login <persona> --platform instagram          # Open a born-in-cloud streamed login in a DEDICATED tab inside your local WAB (the cloud login looks like our antidetect browser, just on the cloud; an existing WAB session in your other tabs is left untouched). Spawns the persona's WAB visibly and opens the viewer at <web-base>/twin-login.html (token in the URL fragment); prints the viewer URL too so you can open it in any browser. On sign-in the stream stops and a Wonda "you are signed in" confirmation replaces it (the platform feed is hidden as you sign in). Unmetered. (--platform <x|linkedin|reddit|instagram>, --web-base default https://wonda.sh)
+wonda twin sync-profile <persona> --cookies-only         # Promote local WAB / local cookie jars to the cloud twin profile. Forces local WAB cookie sync first when that persona is running. Use --platform <x|linkedin|reddit|instagram> to limit scope, --dry-run to inspect, --include-storage to upload Chromium storage too.
+wonda twin export-cookies <persona> --platform linkedin  # Import sanitized .seeded-cookies from the current cloud twin generation into local ~/.wonda/<platform>-cookies/<account>.json. Refuses newer local jars unless --force; --dry-run shows planned writes; --account-label overrides the local label; --inject-running explicitly pushes imported cookies into already-running bound WAB personas.
 
 # Schedules
 wonda twin schedule list --persona <persona>             # List schedules (--persona optional)
 wonda twin schedule add <persona> --cron "0 9 * * *" --kind saved_sync --name saved-posts-scrape   # Add (--kind: saved_sync|engage|agent; --command, --prompt, --mode deterministic|agent)
                                                          # --name <label>: human-readable schedule label (e.g. saved-posts-scrape) for listings/audit; optional
+                                                         # --command is tokenized quote-aware on the server, so a free-text write body (a post, comment, DM, or InMail) survives as one argument. Quote any body that has spaces.
+                                                         # Posting/comment/DM schedules should use --kind engage so they count toward the write-velocity envelope.
                                                          # --jitter-window-seconds N: fire once/day at a random-looking minute within N seconds AFTER the cron time (the cron marks the window start); 0/omitted = fire exactly at the cron minute
                                                          # --output-webhook <url>: deliver each run's captured command stdout to your HTTPS webhook (payload carries a short-TTL signed download URL); --output-webhook-secret <s>: HMAC-SHA256 key signing the body via the X-Wonda-Signature header
 wonda twin schedule add <persona> --kind engage --cron "0 10,14,17 * * 1-5" --jitter-window-seconds 1200 --commands "linkedin feed-engage --authors 'alice,bob' --duration 5m"   # Recurring feed-engage on the cloud twin
+wonda twin schedule add <persona> --kind engage --cron "0 9 * * 1-5" --command "x tweet 'gm builders' --via wab --account <persona>"   # Scheduled posting with free-text argv preserved
                                                          # NOTE: pass targets inline with --authors (comma-separated, no spaces). --authors-file is local-only; the cloud runner has no filesystem for the file.
+                                                         # Platform verbs in schedules are validated against the twin action registry; unknown LinkedIn/Reddit/X/Instagram verbs are rejected even when the twin allowlist is empty.
 wonda twin schedule enable <id>                          # Enable a schedule
 wonda twin schedule disable <id>                         # Disable a schedule
 wonda twin schedule rm <id>                              # Delete a schedule
@@ -1487,32 +1663,37 @@ wonda twin schedule rm <id>                              # Delete a schedule
 # Runs
 wonda twin runs --persona <persona> --limit 20           # Recent runs
 wonda twin run-now <persona> --command <cmd>             # Trigger a run immediately (a WRITE command over the per-identity action limit returns a structured throttled 429). --command is tokenized quote-aware, so quote a free-text body that has spaces: --command "linkedin send-message alice 'hi there :)' --via wab --account alice"
+                                                         # Platform verbs are validated against the twin action registry; non-platform commands still pass through the normal allowlist behavior.
+                                                         # Media write verbs accept Wonda media ids or signed URLs on the twin: reddit submit --media <media-id>, x tweet/reply/quote --attach <media-id>, linkedin post --media <media-id>. The runner fetches bytes to /tmp and passes a local file path to the platform CLI.
 wonda twin output <runId>                                # Fetch a run's captured command output (--url prints just the short-TTL signed download URL)
 
 # SENSE layer (read-only "ask before you act" probes; reuse the EXACT decision + caps the write gate enforces)
 wonda twin can-act --persona <p> [--action connect]      # Would this twin run this verb (or any write, no --action) right now? -> { canAct, reason, code, deferUntil, actionsRemaining }. Reads/generation always pass.
-wonda twin actions --persona <p>                          # Per-action remaining limit + consumed-today + rolling-7d, plus the resolved cap `mode` (global aggregate floor + connect/message/like/comment). `limit` is null when uncapped (unlimited mode).
+wonda twin actions --persona <p>                          # Per-action remaining limit + consumed-today + rolling-7d, plus the resolved cap `mode` (global aggregate floor + connect/message/like/comment/visit). `limit` is null when uncapped (unlimited mode).
 wonda twin health --persona <p>                           # Liveness (active|paused|needs_auth) + signalCooldown (the derived graded cooldown: strongest unresolved platform signal) + recentSignals (the append-only health-record tail: 429s, captchas, checkpoints). When an unresolved critical (captcha / unusual-activity / account-restricted) is active it prints a `run: wonda twin recover <persona> after resolving in-browser` hint to stderr (stdout JSON is untouched).
 
 # Action caps (per-twin MODE + custom overrides the safety gate enforces)
 wonda twin limits get <persona>                           # Show the twin's cap mode (warmup|conservative_steady|moderate_max|unlimited) + custom overrides
 wonda twin limits set <persona> --mode moderate_max       # Set the cap mode. unlimited = NO caps at all (no global, no per-action, no weekly)
-wonda twin limits set <persona> --connect 30 --message 60 # Set CUSTOM daily caps per action (UNCLAMPED, own risk): --connect/--message/--like/--comment, --global <N> (daily aggregate), --*-weekly <N> (rolling-7d). Passing override flags MERGES into the stored overrides (other custom caps are kept); --clear-overrides drops them all back to the mode.
+wonda twin limits set <persona> --connect 30 --message 60 # Set CUSTOM daily caps per action (UNCLAMPED, own risk): --connect/--message/--like/--comment/--visit, --global <N> (daily aggregate), --*-weekly <N> (rolling-7d). Passing override flags MERGES into the stored overrides (other custom caps are kept); --clear-overrides drops them all back to the mode.
 ```
 
-**Safety is intrinsic to running anything on a twin.** Account safety is NOT a feature of the outreach sequencer: it is a property of "run a command on a twin." The SAME per-identity safety gate guards an ad-hoc agent (`wonda linkedin connect --account natty`), the autopilot, a `twin schedule`, and the deterministic outreach sequencer, through ONE enforcement path against ONE shared per-identity counter. So a heavy ad-hoc day on a persona tightens the headroom on that persona automatically (one set of ceilings per identity, no double-charge). The caps are a per-twin MODE (warmup / conservative_steady (default) / moderate_max / unlimited; set via `wonda twin limits set`) selecting the per-action daily ceilings, the per-action rolling-7d weekly ceilings, AND a global daily aggregate cap; `unlimited` turns every cap off, and a custom override is UNCLAMPED. The gate classifies each command from its argv: WRITE / social-action commands (connect, send-message, like, comment, ...) are capped; reads (connection-status, conversations, profile, search), generation (image/video/text), and unknown commands pass freely ungated. This is why the SENSE verbs exist: an agent asks `can-act` / `actions` / `health` BEFORE firing, then branches on the typed result instead of attempting a write and catching a deny.
+**Safety is intrinsic to running anything on a twin.** Account safety is NOT a feature of the outreach sequencer: it is a property of "run a command on a twin." The SAME per-identity safety gate guards an ad-hoc agent (`wonda linkedin connect --account <name>`), the autopilot, a `twin schedule`, and the deterministic outreach sequencer, through ONE enforcement path against ONE shared per-identity counter. So a heavy ad-hoc day on a persona tightens the headroom on that persona automatically (one set of ceilings per identity, no double-charge). The caps are a per-twin MODE (warmup / conservative_steady (default) / moderate_max / unlimited; set via `wonda twin limits set`) selecting the per-action daily ceilings, the per-action rolling-7d weekly ceilings, AND a global daily aggregate cap; `unlimited` turns every cap off, and a custom override is UNCLAMPED. The gate classifies each command from its argv: WRITE / social-action commands (connect, send-message, like, comment, visit, ...) are capped; reads (connection-status, conversations, profile, search), generation (image/video/text), and unknown commands pass freely ungated. This is why the SENSE verbs exist: an agent asks `can-act` / `actions` / `health` BEFORE firing, then branches on the typed result instead of attempting a write and catching a deny.
 
 **Uniform error taxonomy (branch on `code`, never on the message).** Every twin/outreach surface returns the existing `{ error: { code, message } }` envelope, and on a quota deny it also carries `deferUntil` (the ISO time the quota resets) + `reason` (the granular gate signal). Agents branch on the typed `code`:
 
 | `code`                | Meaning                                                                                                                                                                                                                                                                                | What the agent should do                                                                                                                      |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `throttled`           | A WRITE was blocked by the per-identity safety gate (umbrella, HTTP 429). The granular cause is in `reason` (`limit_hit` / `weekly_limit_hit` / `warmup_frozen`).                                                                                                                      | Retry after `deferUntil`; or pick another sender.                                                                                             |
-| `limit_reached`       | A per-action DAILY cap (connect / message / like / comment, per the twin's cap mode) is spent for the UTC day.                                                                                                                                                                         | Wait for `deferUntil` (next UTC midnight) or use a different action / sender.                                                                 |
+| `limit_reached`       | A per-action DAILY cap (connect / message / like / comment / visit, per the twin's cap mode) is spent for the UTC day.                                                                                                                                                                 | Wait for `deferUntil` (next UTC midnight) or use a different action / sender.                                                                 |
 | `limit_exhausted`     | The GLOBAL daily aggregate cap (the `_all` floor) OR a per-action rolling-7d weekly ceiling is spent.                                                                                                                                                                                  | Back off this identity until `deferUntil`; rotate to another twin, or raise the cap mode via `wonda twin limits set`.                         |
 | `needs_auth`          | The twin's session needs re-authentication (cookie expiry / checkpoint).                                                                                                                                                                                                               | Run `wonda twin login <persona>`; do not retry the write.                                                                                     |
 | `sender_blocked`      | The identity is silent-throttled / watchdog-paused (a connect 200'd with no invitationUrn, the twin is paused / warmup frozen, OR an unresolved critical platform signal — captcha / unusual-activity / account-restricted, or a chronic-429 storm). A health stop, not a clean limit. | Stop driving this identity; check `wonda twin health`. For an active critical, resolve it in-browser then run `wonda twin recover <persona>`. |
-| `command_not_allowed` | The command is not on the twin's permission allowlist.                                                                                                                                                                                                                                 | Re-provision with `--allow <cmd>` or drop the step.                                                                                           |
+| `command_not_allowed` | The command is not on the twin's permission allowlist, or it names an unregistered LinkedIn / Reddit / X / Instagram verb.                                                                                                                                                             | Re-provision with `--allow <cmd>` for allowlist denials; drop unregistered platform verbs.                                                    |
 | `unsupported_channel` | The argv targets a platform / verb the twin or CLI can't run.                                                                                                                                                                                                                          | There is no such wonda command for this twin; drop it.                                                                                        |
+| `invalid_payload`     | A live stream action payload is malformed, including a bad media ref that is not a Wonda media id or `https://` URL.                                                                                                                                                                   | Fix the payload before retrying.                                                                                                              |
+| `media_not_found`     | A Wonda media id in a twin media action does not belong to the caller or has no stored object.                                                                                                                                                                                         | Use a media id owned by the account running the twin.                                                                                         |
+| `media_fetch_failed`  | The runner could not download a resolved media URL into its per-action scratch directory.                                                                                                                                                                                              | Retry with a fresh signed URL or a reachable Wonda media id.                                                                                  |
 | `not_found`           | The twin / campaign / resource does not exist.                                                                                                                                                                                                                                         | Provision / create it first.                                                                                                                  |
 | `deferred`            | A structured, non-error deferral: in a BATCH, the gate dropped one over-limit command and ran the rest.                                                                                                                                                                                | Re-enqueue the deferred command after `deferUntil`.                                                                                           |
 
