@@ -24,6 +24,16 @@ brew tap degausai/tap && brew install wonda
 - **Auth**: `wonda auth login` (opens browser, recommended) or set `WONDA_API_KEY` env var
 - **Verify**: `wonda auth check`
 
+### OAuth connector auth
+
+Claude web and Cowork connectors use Wonda's OAuth 2.1 flow instead of a CLI
+API key field. The connector signs in through Wonda in the browser, grants the
+requested account access, and receives OAuth tokens bound to the Wonda API
+resource. The server swaps those tokens to the account's internal API key only
+inside Wonda, so agents and connector hosts never see the `sk_...` key. For the
+CLI and local stdio MCP path, keep using `wonda auth login` or
+`WONDA_API_KEY`.
+
 ### Organizations & spend context
 
 Wondercat orgs are shared wallets with their own seats and billing.
@@ -1603,16 +1613,14 @@ LinkedIn author mode can also opt into comment reactions with `--engage-comments
 
 ### Reddit chat / DMs
 
-Direct messaging via the Matrix protocol. Requires a separate chat token.
+Direct messaging through the WAB. Chat uses the logged-in Reddit browser session
+and is available as first-class twin actions with `--via wab`. There is no
+separate chat token.
 
 ```bash
-# Auth setup (run `wonda reddit chat auth-set --help` for details)
-wonda reddit chat auth-set
-
 # Read
 wonda reddit chat inbox                                  # List DM conversations with latest messages
 wonda reddit chat messages <room-id> -n 50               # Fetch messages from a room
-wonda reddit chat all-rooms                              # List ALL joined rooms (not limited to sync window)
 
 # Write
 wonda reddit chat start <username> --text "Hey!"         # Start (or reuse) a DM with a user by username (no room-id needed)
@@ -1620,10 +1628,9 @@ wonda reddit chat send <room-id> --text "Hey!"           # Send a DM into an exi
 
 # Management
 wonda reddit chat accept-all                             # Accept all pending chat requests
-wonda reddit chat refresh                                # Force-refresh the Matrix chat token
 ```
 
-**Important**: The chat token expires every ~24h. The CLI auto-refreshes on use, but if it expires fully, re-run `auth-set`. Rate limit DM sends to 15-20/day with varied text to avoid detection. The `send` command includes a typing delay (1-5s) to mimic human behavior.
+**Important**: Rate limit DM sends to 15-20/day with varied text to avoid detection. The `send` command drives the browser composer and verifies the rendered message.
 
 ### Cloud digital twins (`wonda twin`)
 
@@ -1640,8 +1647,12 @@ wonda twin update <persona> --spend-cap <microdollars>   # Change caps + alert w
 wonda twin pause <persona>                               # Pause a session
 wonda twin resume <persona>                              # Resume a paused session
 wonda twin needs-auth <persona>                          # Flag a session as needing re-auth
+wonda twin needs-auth-view <persona> --platform x        # Flag needs_auth and mint a streamed view URL using the existing cloud-view route.
 wonda twin recover <persona>                             # Clear an ACTIVE critical safety signal (captcha / unusual-activity / account-restricted) AFTER you have resolved it in-browser. Those criticals do NOT change the twin status, so the safety gate hard-blocks the persona with NO auto-resume until you clear it; this appends a 'recovered' marker the gate reads to stop treating the critical as active. A security checkpoint / needs_auth is cleared by re-login (wonda twin login) instead, not this. -> { recovered, clearedSignalType, persona }
 wonda twin login <persona> --platform instagram          # Open a born-in-cloud streamed login in a DEDICATED tab inside your local WAB (the cloud login looks like our antidetect browser, just on the cloud; an existing WAB session in your other tabs is left untouched). Spawns the persona's WAB visibly and opens the viewer at <web-base>/twin-login.html (token in the URL fragment); prints the viewer URL too so you can open it in any browser. On sign-in the stream stops and a Wonda "you are signed in" confirmation replaces it (the platform feed is hidden as you sign in). Unmetered. (--platform <x|linkedin|reddit|instagram>, --web-base default https://wonda.sh)
+wonda twin seed-from-cookies <persona> --platform x      # Start a cloud seed job from browser cookies previously stored with /social-tokens. The run output carries per-platform login-status results.
+wonda twin login-automated <persona> --platform x        # Attempt credential-vault onboarding; returns needs_human with a view URL when the route cannot finish safely without a human.
+wonda twin login-status <persona> --platform x           # Read-only advisory signed-in check from a warm control session.
 wonda twin sync-profile <persona> --cookies-only         # Promote local WAB / local cookie jars to the cloud twin profile. Forces local WAB cookie sync first when that persona is running. Use --platform <x|linkedin|reddit|instagram> to limit scope, --dry-run to inspect, --include-storage to upload Chromium storage too.
 wonda twin export-cookies <persona> --platform linkedin  # Import sanitized .seeded-cookies from the current cloud twin generation into local ~/.wonda/<platform>-cookies/<account>.json. Refuses newer local jars unless --force; --dry-run shows planned writes; --account-label overrides the local label; --inject-running explicitly pushes imported cookies into already-running bound WAB personas.
 

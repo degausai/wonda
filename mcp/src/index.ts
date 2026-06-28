@@ -7,6 +7,7 @@ import { registerGenerateTools } from "./tools/generate.js";
 import { registerJobTools } from "./tools/jobs.js";
 import { registerMediaTools } from "./tools/media.js";
 import { registerPublishTools } from "./tools/publish.js";
+import { registerTwinTools } from "./tools/twin.js";
 
 const server = new McpServer({
   name: "wonda",
@@ -22,6 +23,7 @@ registerGenerateTools(server);
 registerMediaTools(server);
 registerJobTools(server);
 registerPublishTools(server);
+registerTwinTools(server);
 registerResources(server);
 
 const transport = new StdioServerTransport();
