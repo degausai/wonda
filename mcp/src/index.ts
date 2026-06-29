@@ -6,12 +6,13 @@ import { registerResources } from "./resources/index.js";
 import { registerGenerateTools } from "./tools/generate.js";
 import { registerJobTools } from "./tools/jobs.js";
 import { registerMediaTools } from "./tools/media.js";
+import { registerPlatformTools } from "./tools/platform.js";
 import { registerPublishTools } from "./tools/publish.js";
 import { registerTwinTools } from "./tools/twin.js";
 
 const server = new McpServer({
   name: "wonda",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 registerGenerateTools(server);
@@ -24,6 +25,7 @@ registerMediaTools(server);
 registerJobTools(server);
 registerPublishTools(server);
 registerTwinTools(server);
+registerPlatformTools(server);
 registerResources(server);
 
 const transport = new StdioServerTransport();

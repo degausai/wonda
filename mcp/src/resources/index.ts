@@ -50,4 +50,28 @@ export function registerResources(server: McpServer): void {
       };
     },
   );
+
+  server.registerResource(
+    "twins",
+    "wonda://twins",
+    {
+      title: "Cloud Twins",
+      description: "Provisioned twins with status",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const result = await apiGet("/twin/sessions");
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: result.ok
+              ? JSON.stringify(result.data)
+              : JSON.stringify({ error: result.error }),
+          },
+        ],
+      };
+    },
+  );
 }

@@ -52,6 +52,40 @@ export async function apiPost<T = unknown>(
   return parseResponse<T>(response);
 }
 
+export async function apiPut<T = unknown>(
+  path: string,
+  body?: unknown,
+): Promise<ApiResult<T>> {
+  const response = await fetch(buildUrl(path), {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return parseResponse<T>(response);
+}
+
+export async function apiPatch<T = unknown>(
+  path: string,
+  body?: unknown,
+): Promise<ApiResult<T>> {
+  const response = await fetch(buildUrl(path), {
+    method: "PATCH",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return parseResponse<T>(response);
+}
+
+export async function apiDelete<T = unknown>(
+  path: string,
+): Promise<ApiResult<T>> {
+  const response = await fetch(buildUrl(path), {
+    method: "DELETE",
+    headers,
+  });
+  return parseResponse<T>(response);
+}
+
 export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,

@@ -1691,6 +1691,19 @@ wonda twin limits set <persona> --mode moderate_max       # Set the cap mode. un
 wonda twin limits set <persona> --connect 30 --message 60 # Set CUSTOM daily caps per action (UNCLAMPED, own risk): --connect/--message/--like/--comment/--visit, --global <N> (daily aggregate), --*-weekly <N> (rolling-7d). Passing override flags MERGES into the stored overrides (other custom caps are kept); --clear-overrides drops them all back to the mode.
 ```
 
+### Local WAB relay (`wonda relay`)
+
+Run registered twin actions on this machine's local WAB while callers still use the cloud broker and the same `/twin/sessions/{persona}/actions/{platform}/{action}` API.
+
+```bash
+wonda relay pair                                        # Pair this machine with your Wonda account using the existing browser login flow
+wonda relay run --persona <p>                           # Reverse-connect to the cloud broker and serve actions for a persona
+wonda relay status --persona <p>                        # Show local relay configuration
+wonda relay stop --persona <p>                          # Clear cloud relay presence for a persona
+```
+
+The relay runs on your real device and IP. Platform cookies stay local. It only serves actions while the machine and `wonda relay run` are up. If no live relay is present, the broker routes the same twin action call to the cloud twin instead.
+
 **Safety is intrinsic to running anything on a twin.** Account safety is NOT a feature of the outreach sequencer: it is a property of "run a command on a twin." The SAME per-identity safety gate guards an ad-hoc agent (`wonda linkedin connect --account <name>`), the autopilot, a `twin schedule`, and the deterministic outreach sequencer, through ONE enforcement path against ONE shared per-identity counter. So a heavy ad-hoc day on a persona tightens the headroom on that persona automatically (one set of ceilings per identity, no double-charge). The caps are a per-twin MODE (warmup / conservative_steady (default) / moderate_max / unlimited; set via `wonda twin limits set`) selecting the per-action daily ceilings, the per-action rolling-7d weekly ceilings, AND a global daily aggregate cap; `unlimited` turns every cap off, and a custom override is UNCLAMPED. The gate classifies each command from its argv: WRITE / social-action commands (connect, send-message, like, comment, visit, ...) are capped; reads (connection-status, conversations, profile, search), generation (image/video/text), and unknown commands pass freely ungated. This is why the SENSE verbs exist: an agent asks `can-act` / `actions` / `health` BEFORE firing, then branches on the typed result instead of attempting a write and catching a deny.
 
 **Uniform error taxonomy (branch on `code`, never on the message).** Every twin/outreach surface returns the existing `{ error: { code, message } }` envelope, and on a quota deny it also carries `deferUntil` (the ISO time the quota resets) + `reason` (the granular gate signal). Agents branch on the typed `code`:
