@@ -1,34 +1,62 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const DEFAULT_BASE_URL = "https://api.wondercat.ai/api/v1";
 
-const baseUrl = (process.env.WONDA_BASE_URL ?? DEFAULT_BASE_URL).replace(
-  /\/$/,
-  "",
-);
-const apiKey = process.env.WONDA_API_KEY ?? process.env.WONDERCAT_API_KEY;
+export type ApiContext = {
+  apiKey: string;
+  baseUrl?: string;
+};
+
+type NormalizedApiContext = {
+  apiKey?: string;
+  baseUrl: string;
+};
+
+const apiContextStorage = new AsyncLocalStorage<NormalizedApiContext>();
+
+export function runWithApiContext<T>(
+  context: ApiContext,
+  callback: () => T,
+): T {
+  return apiContextStorage.run(normalizeApiContext(context), callback);
+}
+
+function getApiContext(): NormalizedApiContext {
+  const context = apiContextStorage.getStore();
+  if (context) return context;
+
+  return normalizeApiContext({
+    apiKey: process.env.WONDA_API_KEY ?? process.env.WONDERCAT_API_KEY ?? "",
+    baseUrl: process.env.WONDA_BASE_URL,
+  });
+}
+
+function normalizeApiContext(context: {
+  apiKey?: string;
+  baseUrl?: string;
+}): NormalizedApiContext {
+  return {
+    apiKey: context.apiKey,
+    baseUrl: (context.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, ""),
+  };
+}
 
 function buildUrl(path: string): string {
+  const { baseUrl } = getApiContext();
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-if (!apiKey) {
-  throw new Error(
-    "WONDA_API_KEY environment variable is required.\n" +
-      "Get your API key at https://wonda.sh → Settings → API Keys",
-  );
-}
-
-const headers: Record<string, string> = {
-  Authorization: `Bearer ${apiKey}`,
-};
-
-type ApiResult<T = unknown> =
-  | { ok: true; data: T; status: number }
-  | { ok: false; error: string; status: number };
+export type ApiResult<T = unknown> =
+  | { ok: true; data: T; status: number; error?: never }
+  | { ok: false; error: string; status: number; data?: never };
 
 export async function apiGet<T = unknown>(
   path: string,
   query?: Record<string, string | undefined>,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const url = new URL(buildUrl(path));
   if (query) {
     for (const [key, value] of Object.entries(query)) {
@@ -36,7 +64,7 @@ export async function apiGet<T = unknown>(
     }
   }
 
-  const response = await fetch(url, { headers });
+  const response = await fetch(url, { headers: headers.data });
   return parseResponse<T>(response);
 }
 
@@ -44,9 +72,12 @@ export async function apiPost<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const response = await fetch(buildUrl(path), {
     method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
+    headers: { ...headers.data, "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   return parseResponse<T>(response);
@@ -56,9 +87,12 @@ export async function apiPut<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const response = await fetch(buildUrl(path), {
     method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
+    headers: { ...headers.data, "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   return parseResponse<T>(response);
@@ -68,9 +102,12 @@ export async function apiPatch<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const response = await fetch(buildUrl(path), {
     method: "PATCH",
-    headers: { ...headers, "Content-Type": "application/json" },
+    headers: { ...headers.data, "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   return parseResponse<T>(response);
@@ -79,9 +116,12 @@ export async function apiPatch<T = unknown>(
 export async function apiDelete<T = unknown>(
   path: string,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const response = await fetch(buildUrl(path), {
     method: "DELETE",
-    headers,
+    headers: headers.data,
   });
   return parseResponse<T>(response);
 }
@@ -90,12 +130,34 @@ export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<ApiResult<T>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
   const response = await fetch(buildUrl(path), {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: headers.data,
     body: formData,
   });
   return parseResponse<T>(response);
+}
+
+function getAuthHeaders(): ApiResult<Record<string, string>> {
+  const { apiKey } = getApiContext();
+  if (apiKey === undefined || apiKey.trim() === "") {
+    return {
+      ok: false,
+      error:
+        "WONDA_API_KEY environment variable is required.\n" +
+        "Get your API key at https://wonda.sh -> Settings -> API Keys",
+      status: 401,
+    };
+  }
+
+  return { ok: true, data: { Authorization: `Bearer ${apiKey}` }, status: 200 };
+}
+
+function apiError<T>(result: { error: string; status: number }): ApiResult<T> {
+  return { ok: false, error: result.error, status: result.status };
 }
 
 function extractError(data: unknown, status: number): string {

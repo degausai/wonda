@@ -34,6 +34,24 @@ inside Wonda, so agents and connector hosts never see the `sk_...` key. For the
 CLI and local stdio MCP path, keep using `wonda auth login` or
 `WONDA_API_KEY`.
 
+### Claude Cowork local relay
+
+Claude web and Cowork cannot load a local `.mcpb` bundle. To run actions on the
+user's own Mac and residential IP from Cowork, use the Wonda local relay:
+
+1. Open `https://wonda.sh/download` while signed in and install the notarized
+   Mac package.
+2. Pair the relay with `wonda relay pair` or the first-run browser handoff. This
+   uses the existing `cli-auth` flow with a relay-scoped `wrelay_...`
+   credential stored in the macOS Keychain. Do not ask the user to paste an API
+   key or device code.
+3. Open `https://wonda.sh/setup`, connect LinkedIn, X, and Reddit through the
+   headful local WAB, then approve the Wonda connector once in Claude.
+
+The engine policy is `auto | my_machine | cloud`. `auto` uses the local relay
+when it is online and cloud otherwise. `my_machine` must not silently fall back:
+if the relay is offline, ask whether to switch to cloud.
+
 ### Organizations & spend context
 
 Wondercat orgs are shared wallets with their own seats and billing.
@@ -196,6 +214,8 @@ The Wonda Automation Browser (WAB) is a premium stealth antidetect browser, hard
 - **Anonymous capture.** `wonda wab record <url>` (and `wonda brand extract`) drive an ephemeral Chromium with a fresh fingerprint, no persona, no cookies. See the `record` block below.
 
 The mental model: you have **accounts** (one identity per platform). Each platform command routes to that account's cookies via either the flat JSON store (`--via cookies`, fast, no Chromium) or the account's **persona** (`--via wab`, live antidetect Chromium). A persona is the Chromium envelope that can hold multiple accounts under one fingerprint. In almost every case the persona is auto-created on first `--via wab` use, named after the account, so you never type a persona name.
+
+The local `wonda.mcpb` Desktop Extension uses this same local WAB path from Claude Desktop or Claude Code: platform cookies stay on-device, reads use local cookies, and writes use the local WAB. Claude web and Cowork need the remote MCP connector instead.
 
 **Native login is the default for a new persona.** `wonda wab login <persona> <platform>` opens a headful WAB window and you log in there. The session is minted INSIDE the WAB, so it is independent (logging out of the same account in an unrelated Chrome cannot revoke it) and the cookies are born under the WAB's own fingerprint, so session and browser identity stay coherent. A brand-new persona auto-created on first `--via wab` use chains straight into this flow on a TTY. Pasting cookies from another browser (`wonda linkedin auth set`, `wonda x auth set`, ...) still works and is the explicit fallback, but a hand-pasted `li_at` on a novel WAB fingerprint is the highest-risk shape.
 
@@ -403,15 +423,16 @@ wonda skill get <slug>                          # Pull a skill's full step-by-st
 
 **video**
 
-| Slug                | What it does                                                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| product-video       | Product/scene video from an image or from scratch                                                                      |
-| split-screen-demo   | 5-second 16:9 LinkedIn loop, source doc to designed slides comparison ending on a CTA that crosses out the competitors |
-| tiktok-ugc-pipeline | Reverse-engineer a viral reel, generate 5 variations, auto-post                                                        |
-| ugc-dance-motion    | Dance and motion transfer video from image + reference                                                                 |
-| ugc-hook-brainstorm | 25 graded scroll-stopping UGC hooks, hot casting, iPhone 16 aesthetic, psychological levers                            |
-| ugc-reaction-batch  | Batch produce TikTok-native UGC reaction videos                                                                        |
-| ugc-talking         | Talking-head UGC ad, single clip, two-angle PIP, or long-form 20s+                                                     |
+| Slug                | What it does                                                                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| product-demo-video  | Premium ~15s multi-beat product demo, a dev hits a pain point, runs your tool, it does something real on screen, the payoff lands, then a branded CTA, built as one HTML composite captured per-frame and muxed with ffmpeg |
+| product-video       | Product/scene video from an image or from scratch                                                                                                                                                                           |
+| split-screen-demo   | 5-second 16:9 LinkedIn loop, source doc to designed slides comparison ending on a CTA that crosses out the competitors                                                                                                      |
+| tiktok-ugc-pipeline | Reverse-engineer a viral reel, generate 5 variations, auto-post                                                                                                                                                             |
+| ugc-dance-motion    | Dance and motion transfer video from image + reference                                                                                                                                                                      |
+| ugc-hook-brainstorm | 25 graded scroll-stopping UGC hooks, hot casting, iPhone 16 aesthetic, psychological levers                                                                                                                                 |
+| ugc-reaction-batch  | Batch produce TikTok-native UGC reaction videos                                                                                                                                                                             |
+| ugc-talking         | Talking-head UGC ad, single clip, two-angle PIP, or long-form 20s+                                                                                                                                                          |
 
 **image**
 
@@ -442,13 +463,14 @@ wonda skill get <slug>                          # Pull a skill's full step-by-st
 
 **utility**
 
-| Slug                   | What it does                                                                                                                                                    |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| extract-apply-style    | Extract a visual style from any image, then generate new subjects in that style                                                                                 |
-| ffmpeg                 | Local deterministic media transforms, trim, replace audio, burn captions, social formatting, scene splitting, silence cut, frame extraction, analysis artifacts |
-| image-edit             | Edit existing images, img2img, background removal, crop, text overlay, vectorize                                                                                |
-| slide-generation       | Generate branded slide decks from any content source, codebase, Notion notes, or Google Docs                                                                    |
-| tiktok-caption-presets | TikTok-style textOverlay and animatedCaptions presets applied via wonda edit --preset                                                                           |
+| Slug                   | What it does                                                                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| extract-apply-style    | Extract a visual style from any image, then generate new subjects in that style                                                                                                                            |
+| ffmpeg                 | Local deterministic media transforms, trim, replace audio, burn captions, social formatting, scene splitting, silence cut, frame extraction, analysis artifacts                                            |
+| image-edit             | Edit existing images, img2img, background removal, crop, text overlay, vectorize                                                                                                                           |
+| slide-generation       | Generate branded slide decks from any content source, codebase, Notion notes, or Google Docs                                                                                                               |
+| software-ui-mockups    | Render real software UIs, terminal/CLI TUIs, the Chrome browser window, the macOS desktop, pixel-accurately in HTML for demo videos, slides, screenshots and docs, from the program's real source of truth |
+| tiktok-caption-presets | TikTok-style textOverlay and animatedCaptions presets applied via wonda edit --preset                                                                                                                      |
 
 <!-- SKILLS_TABLE_END -->
 
@@ -1415,7 +1437,8 @@ wonda linkedin company google                        # View company page
 wonda linkedin conversations                         # List message threads
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin notifications -n 20                   # Recent notifications
-wonda linkedin connections                           # Your connections
+wonda linkedin connections                           # Your own connections (recently-added order, each with connectedAt)
+wonda linkedin connections johndoe                   # A member's connections visible to you (connectionOf search; relevance order, no dates; --degree 1|2|3 filters by your distance; --all enumerates)
 wonda linkedin sent-invitations                      # Pending sent invites + audit reconciliation; cookies default, --via wab supported
 wonda linkedin invitations                           # Incoming connection requests with notes and sharedSecret (cookie-only read)
 wonda linkedin connection-status johndoe janedoe     # Per-member: connected / pending (in|out) / not_connected (cookie-only)
@@ -1635,6 +1658,10 @@ wonda reddit chat accept-all                             # Accept all pending ch
 ### Cloud digital twins (`wonda twin`)
 
 Manage cloud-hosted social personas that run behind mobile proxies. Sessions are server-side; schedules drive recurring tasks (saved-content sync, engagement, agent runs) on a cron.
+
+The MCP twin surface tags read tools as Always allow and write tools as Needs approval. Use `run_campaign` and `schedule_loop` for one-approval autopilot loops; use the per-verb platform tools for supervised actions.
+
+Claude web and Cowork users can connect the cloud twin as a custom remote MCP connector from https://wonda.sh/docs/connect-claude.
 
 ```bash
 # Sessions

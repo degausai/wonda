@@ -24,6 +24,16 @@ Add to your MCP config:
 }
 ```
 
+### Claude Desktop / Claude Code local mode (`.mcpb`)
+
+Download the MCPB for your Mac CPU from a Wonda CLI release (`wonda-darwin-arm64.mcpb` for Apple Silicon, `wonda-darwin-amd64.mcpb` for Intel) and open it with Claude Desktop. The bundle runs this MCP server locally and sets `WONDA_MCP_MODE=local`, so LinkedIn, Reddit, X, and Instagram platform action tools execute through the bundled `wonda` binary against your on-device Wonda Automation Browser and local cookie store.
+
+The release bundle is currently macOS-only because it embeds the signed macOS `wonda` binary.
+
+During install, Claude prompts for your Wonda API key and stores it as a sensitive setting in the OS keychain. The key is used for Wonda API metering and the non-local API tools. Platform cookies stay in `~/.wonda/` and are read only by the local `wonda` binary.
+
+Local `.mcpb` install is for Claude Desktop and Claude Code. Claude web and Cowork cannot load local bundles, so they need the remote MCP connector instead.
+
 ### Hermes Agent
 
 Add to `~/.hermes/config.yaml`:
@@ -87,10 +97,14 @@ mcp_servers:
 | `twin_login_automated`   | Start automated twin login                 |
 | `twin_login_status`      | Check twin login status                    |
 | `twin_needs_auth_view`   | Flag auth needed and mint a view URL       |
+| `run_campaign`           | Run one bounded autonomous twin campaign   |
+| `schedule_loop`          | Create a recurring autonomous twin loop    |
 | `linkedin_*`             | LinkedIn twin platform actions             |
 | `reddit_*`               | Reddit twin platform actions               |
 | `x_*`                    | X twin platform actions                    |
 | `instagram_*`            | Instagram twin platform actions            |
+
+Twin platform tools include client consent hints: read actions are tagged as read-only for Always allow clients, while write actions are tagged as non-read-only and destructive so clients request approval. `run_campaign` and `schedule_loop` are the one-approval autopilot tools; the per-verb platform tools remain the supervised path.
 
 ## Resources
 
@@ -102,10 +116,13 @@ mcp_servers:
 
 ## Environment Variables
 
-| Variable         | Required | Description                                                        |
-| ---------------- | -------- | ------------------------------------------------------------------ |
-| `WONDA_API_KEY`  | Yes      | Your Wonda API key (`sk_...`)                                      |
-| `WONDA_BASE_URL` | No       | Override API base URL (default: `https://api.wondercat.ai/api/v1`) |
+| Variable                | Required           | Description                                                        |
+| ----------------------- | ------------------ | ------------------------------------------------------------------ |
+| `WONDA_API_KEY`         | Yes for HTTP tools | Your Wonda API key (`sk_...`)                                      |
+| `WONDA_BASE_URL`        | No                 | Override API base URL (default: `https://api.wondercat.ai/api/v1`) |
+| `WONDA_MCP_MODE`        | No                 | Set to `local` to run platform action tools through local `wonda`  |
+| `WONDA_BIN`             | No                 | Path to the local or bundled `wonda` binary                        |
+| `WONDA_DEFAULT_ACCOUNT` | No                 | Default local WAB persona or account label                         |
 
 ## License
 

@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../api.js";
+import {
+  READ_TOOL_ANNOTATIONS,
+  WRITE_TOOL_ANNOTATIONS,
+} from "./annotations.js";
 
 const platformSchema = z.enum(["x", "reddit", "linkedin", "instagram"]);
 const provenanceSchema = z.enum(["born_in_cloud", "synced_local"]);
@@ -81,6 +85,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Provision Twin",
       description: "Provision or connect a cloud twin profile.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: provisionTwinInputSchema,
     },
     async (args) => toolResult(await apiPost("/twin/sessions", args)),
@@ -91,6 +96,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "List Twins",
       description: "List cloud twins for the current account.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({}),
     },
     async () => toolResult(await apiGet("/twin/sessions")),
@@ -101,6 +107,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Show Twin",
       description: "Get one cloud twin by persona.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -112,6 +119,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Pause Twin",
       description: "Pause a cloud twin.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -127,6 +135,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Resume Twin",
       description: "Resume a paused cloud twin.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -143,6 +152,7 @@ export function registerTwinTools(server: McpServer): void {
       title: "Update Twin",
       description:
         "Update a cloud twin status, permission profile, spend cap, or write limit.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         status: twinStatusSchema.optional(),
@@ -164,6 +174,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Run Twin Now",
       description: "Trigger an on-demand twin run.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         command: z.string().optional(),
@@ -182,6 +193,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Twin Can Act",
       description: "Check whether a cloud twin can run an action right now.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         action: z.string().optional(),
@@ -200,6 +212,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Twin Action Allowance",
       description: "Get per-action allowance and usage for a cloud twin.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -213,6 +226,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Twin Health",
       description: "Get liveness and ban-signal health for a cloud twin.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -226,6 +240,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Twin Limits",
       description: "Get action-cap mode and custom overrides for a cloud twin.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: personaInputSchema,
     },
     async ({ persona }) =>
@@ -239,6 +254,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Set Twin Limits",
       description: "Set action-cap mode and custom overrides for a cloud twin.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         mode: limitsModeSchema.optional(),
@@ -259,6 +275,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "List Twin Runs",
       description: "List recent twin audit runs.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: listTwinRunsInputSchema,
     },
     async ({ persona, limit }) =>
@@ -275,6 +292,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Get Twin Output",
       description: "Get a presigned download URL for a twin run's output.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         runId: z.string().min(1),
       }),
@@ -290,6 +308,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Cancel Twin Run",
       description: "Cancel a twin run.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         runId: z.string().min(1),
       }),
@@ -305,6 +324,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "List Twin Schedules",
       description: "List cloud twin schedules.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1).optional(),
       }),
@@ -318,6 +338,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Create Twin Schedule",
       description: "Create a cloud twin schedule.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: scheduleInputSchema,
     },
     async (args) => toolResult(await apiPost("/twin/schedules", args)),
@@ -328,6 +349,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Update Twin Schedule",
       description: "Enable, disable, or edit a cloud twin schedule.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: updateScheduleInputSchema,
     },
     async ({ id, ...body }) =>
@@ -341,6 +363,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Delete Twin Schedule",
       description: "Delete a cloud twin schedule.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         id: z.string().min(1),
       }),
@@ -355,6 +378,7 @@ export function registerTwinTools(server: McpServer): void {
       title: "Seed Twin From Cookies",
       description:
         "Start a cloud twin profile seed job from stored social browser cookies.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         platforms: z.array(platformSchema).min(1),
@@ -375,6 +399,7 @@ export function registerTwinTools(server: McpServer): void {
       title: "Automated Twin Login",
       description:
         "Attempt credential-vault login automation for a cloud twin. May return a human view URL.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         platform: platformSchema,
@@ -394,6 +419,7 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Twin Login Status",
       description: "Check a cloud twin's advisory platform login status.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         platform: platformSchema,
@@ -414,6 +440,7 @@ export function registerTwinTools(server: McpServer): void {
       title: "Twin Needs Auth View",
       description:
         "Flag a cloud twin as needing re-authentication, then mint a hosted view URL.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
         platform: platformSchema.optional(),

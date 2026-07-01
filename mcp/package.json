@@ -1,10 +1,24 @@
 {
   "name": "@degausai/wonda-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for the Wonda content creation API — images, video, music, audio, editing, and publishing",
   "type": "module",
   "bin": {
     "wonda-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
   },
   "files": [
     "dist"
@@ -12,7 +26,11 @@
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
     "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit"
+    "test:types": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "check:annotations": "npm run build && node scripts/check-tool-annotations.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "pack:mcpb": "npm run build && node scripts/build-mcpb.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
