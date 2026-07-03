@@ -29,7 +29,7 @@
     "test:types": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "check:annotations": "npm run build && node scripts/check-tool-annotations.mjs",
-    "test": "npm run build && node --test test/*.test.mjs",
+    "test": "npm run build && node --test test/*.test.mjs && node scripts/check-api-compat.mjs",
     "pack:mcpb": "npm run build && node scripts/build-mcpb.mjs"
   },
   "dependencies": {

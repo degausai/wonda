@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { buildUserAgent } from "./version.js";
+
 const DEFAULT_BASE_URL = "https://api.wondercat.ai/api/v1";
 
 export type ApiContext = {
@@ -47,7 +49,16 @@ function buildUrl(path: string): string {
 }
 
 export type ApiResult<T = unknown> =
-  | { ok: true; data: T; status: number; error?: never }
+  | {
+      ok: true;
+      data: T;
+      status: number;
+      /** Informational update/broadcast text appended to tool output. */
+      notice?: string;
+      /** Hard staleness warning prepended to tool output. */
+      warning?: string;
+      error?: never;
+    }
   | { ok: false; error: string; status: number; data?: never };
 
 export async function apiGet<T = unknown>(
@@ -153,7 +164,14 @@ function getAuthHeaders(): ApiResult<Record<string, string>> {
     };
   }
 
-  return { ok: true, data: { Authorization: `Bearer ${apiKey}` }, status: 200 };
+  return {
+    ok: true,
+    data: {
+      Authorization: `Bearer ${apiKey}`,
+      "User-Agent": buildUserAgent(),
+    },
+    status: 200,
+  };
 }
 
 function apiError<T>(result: { error: string; status: number }): ApiResult<T> {

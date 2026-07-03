@@ -8,11 +8,13 @@ import { registerJobTools } from "./tools/jobs.js";
 import { registerMediaTools } from "./tools/media.js";
 import { registerPlatformTools } from "./tools/platform.js";
 import { registerPublishTools } from "./tools/publish.js";
+import { registerStatusTools } from "./tools/status.js";
 import { registerTwinTools } from "./tools/twin.js";
+import { PKG_VERSION } from "./version.js";
 
 export const WONDA_MCP_SERVER_INFO = {
   name: "wonda",
-  version: "0.3.0",
+  version: PKG_VERSION,
 } as const;
 
 export type CreateWondaMcpServerOptions = {
@@ -36,6 +38,7 @@ export function createWondaMcpServer(
   registerTwinTools(server);
   registerPlatformTools(server, options.platformToolExecutor);
   registerCampaignTools(server);
+  registerStatusTools(server);
   registerResources(server);
 
   return server;

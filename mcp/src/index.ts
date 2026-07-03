@@ -3,8 +3,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { runLocalVerb } from "./local-exec.js";
 import { createWondaMcpServer } from "./server.js";
+import { captureBinaryVersion } from "./version.js";
 
 const mcpMode = process.env.WONDA_MCP_MODE === "local" ? "local" : "remote";
+
+// Capture `wonda --version` early so the User-Agent carries the binary
+// version from the first API call (cached for the process lifetime).
+if (mcpMode === "local") void captureBinaryVersion();
 
 const server = createWondaMcpServer(
   mcpMode === "local"

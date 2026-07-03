@@ -1727,6 +1727,8 @@ wonda relay pair                                        # Pair this machine with
 wonda relay run --persona <p>                           # Reverse-connect to the cloud broker and serve actions for a persona
 wonda relay status --persona <p>                        # Show local relay configuration
 wonda relay stop --persona <p>                          # Clear cloud relay presence for a persona
+wonda relay install [--persona <p>]                     # macOS: install the relay as a LaunchAgent (auto-start at login, restarts on crash, logs to ~/Library/Logs/wonda-relay.log). Re-run to restart onto a new binary
+wonda relay uninstall                                   # macOS: stop the relay LaunchAgent and remove its plist
 ```
 
 The relay runs on your real device and IP. Platform cookies stay local. It only serves actions while the machine and `wonda relay run` are up. If no live relay is present, the broker routes the same twin action call to the cloud twin instead.

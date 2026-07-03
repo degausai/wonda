@@ -9,6 +9,14 @@ import type {
   LocalActionPlatform,
 } from "./local-action-registry.js";
 import { LOCAL_ACTIONS } from "./local-action-registry.js";
+import { getCliVersionPolicy } from "./version-policy.js";
+import {
+  buildUpdateInstruction,
+  captureBinaryVersion,
+  compareVersions,
+  detectInstallChannel,
+  formatVersion,
+} from "./version.js";
 
 type ExecFileCallback = (
   error: Error | null,
@@ -102,14 +110,79 @@ export async function buildLocalActionArgv(
   }
 }
 
+/**
+ * Extracts the wonda CLI's stderr update banner ("A new version of wonda is
+ * available: ..." + the channel instruction/changelog lines, see
+ * BANNER_CONTINUATION_PREFIXES) and broadcast message
+ * blocks ("[SEVERITY] Title" + body until a blank line, see
+ * update.PrintMessages) so they can surface in tool results. All other
+ * stderr stays suppressed on success.
+ */
+export function extractUpdateNotices(stderr: string): string[] {
+  const lines = stderr.replace(ANSI_PATTERN, "").split(/\r?\n/);
+  const notices: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? "";
+    if (line.startsWith(UPDATE_BANNER_PREFIX)) {
+      const block = [line];
+      while (index + 1 < lines.length) {
+        const next = lines[index + 1]?.trim() ?? "";
+        if (
+          !BANNER_CONTINUATION_PREFIXES.some((prefix) =>
+            next.startsWith(prefix),
+          )
+        ) {
+          break;
+        }
+        block.push(next);
+        index += 1;
+      }
+      notices.push(block.join("\n"));
+      continue;
+    }
+    if (BROADCAST_MESSAGE_PATTERN.test(line)) {
+      const block = [line];
+      while (
+        index + 1 < lines.length &&
+        (lines[index + 1]?.trim() ?? "") !== ""
+      ) {
+        block.push(lines[index + 1]?.trim() ?? "");
+        index += 1;
+      }
+      notices.push(block.join("\n"));
+    }
+  }
+  return notices;
+}
+
+const UPDATE_BANNER_PREFIX = "A new version of wonda is available:";
+
+// Second/third banner lines per install channel: "Update: <cmd>" (curl, brew,
+// npm), "Download the latest installer: <url>" (pkg), the bare extension
+// instruction (mcpb), and "Changelog: <url>" on all of them.
+const BANNER_CONTINUATION_PREFIXES = [
+  "Update:",
+  "Changelog:",
+  "Download the latest installer:",
+  "Update the Wonda extension",
+];
+const BROADCAST_MESSAGE_PATTERN = /^\[[A-Z]+\] /;
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN = /\u001B\[[0-9;]*m/g;
+
 async function runWonda(
   argv: string[],
   options: RunLocalVerbOptions,
 ): Promise<ApiResult<unknown>> {
   const binary = process.env.WONDA_BIN ?? "wonda";
   const execFileImpl = options.execFile ?? execFile;
+  const noticesPromise = getVersionNotices().catch((): VersionNotices => ({}));
 
-  return new Promise((resolve) => {
+  const execResult = await new Promise<{
+    error: Error | null;
+    stdout: string | Buffer;
+    stderr: string | Buffer;
+  }>((resolve) => {
     execFileImpl(
       binary,
       argv,
@@ -118,37 +191,81 @@ async function runWonda(
         timeout: timeoutFor(argv, options),
         maxBuffer: 10 * 1024 * 1024,
       },
-      (error, stdout, stderr) => {
-        const stdoutText = bufferToString(stdout).trim();
-        const stderrText = bufferToString(stderr).trim();
-        if (error !== null) {
-          resolve({
-            ok: false,
-            error: stderrText || error.message,
-            status: exitStatus(error),
-          });
-          return;
-        }
-
-        try {
-          resolve({
-            ok: true,
-            data: stdoutText.length > 0 ? JSON.parse(stdoutText) : {},
-            status: 200,
-          });
-        } catch {
-          resolve({
-            ok: false,
-            error:
-              stdoutText.length > 0
-                ? stdoutText
-                : "wonda returned invalid JSON",
-            status: 500,
-          });
-        }
-      },
+      (error, stdout, stderr) => resolve({ error, stdout, stderr }),
     );
   });
+
+  const { notice, warning } = await noticesPromise;
+  const stdoutText = bufferToString(execResult.stdout).trim();
+  const stderrText = bufferToString(execResult.stderr).trim();
+
+  if (execResult.error !== null) {
+    const message = stderrText || execResult.error.message;
+    return {
+      ok: false,
+      error: warning === undefined ? message : `${warning}\n\n${message}`,
+      status: exitStatus(execResult.error),
+    };
+  }
+
+  const noticeParts = [notice, ...extractUpdateNotices(stderrText)].filter(
+    (part): part is string => part !== undefined && part !== "",
+  );
+  const combinedNotice =
+    noticeParts.length > 0 ? noticeParts.join("\n\n") : undefined;
+
+  try {
+    return {
+      ok: true,
+      data: stdoutText.length > 0 ? JSON.parse(stdoutText) : {},
+      status: 200,
+      notice: combinedNotice,
+      warning,
+    };
+  } catch {
+    const message =
+      stdoutText.length > 0 ? stdoutText : "wonda returned invalid JSON";
+    return {
+      ok: false,
+      error: warning === undefined ? message : `${warning}\n\n${message}`,
+      status: 500,
+    };
+  }
+}
+
+type VersionNotices = { notice?: string; warning?: string };
+
+/**
+ * Computes the staleness notice/warning for the local binary. The binary
+ * version is captured once per process; the version policy is fetched with a
+ * 30-minute TTL. Both run while the actual verb executes, so this adds no
+ * latency to tool calls.
+ */
+async function getVersionNotices(): Promise<VersionNotices> {
+  const binaryVersion = await captureBinaryVersion();
+  if (binaryVersion === undefined) return {};
+  const policy = await getCliVersionPolicy();
+  if (policy === undefined) return {};
+
+  const instruction = buildUpdateInstruction(detectInstallChannel(), policy);
+  const suffix = instruction === undefined ? "" : ` ${instruction}`;
+  if (
+    policy.minSupported !== undefined &&
+    compareVersions(binaryVersion, policy.minSupported) < 0
+  ) {
+    return {
+      warning: `WARNING: Wonda binary ${formatVersion(binaryVersion)} is older than the minimum supported version ${formatVersion(policy.minSupported)}. Tool calls may fail until it is updated.${suffix}`,
+    };
+  }
+  if (
+    policy.latest !== undefined &&
+    compareVersions(binaryVersion, policy.latest) < 0
+  ) {
+    return {
+      notice: `Wonda binary ${formatVersion(binaryVersion)} is outdated (latest ${formatVersion(policy.latest)}).${suffix}`,
+    };
+  }
+  return {};
 }
 
 function timeoutFor(argv: string[], options: RunLocalVerbOptions): number {

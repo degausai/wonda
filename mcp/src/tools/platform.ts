@@ -83,8 +83,11 @@ function toolResult(result: ApiResult<unknown>) {
       isError: true,
     };
   }
+  const text = [result.warning, JSON.stringify(result.data), result.notice]
+    .filter((part): part is string => part !== undefined)
+    .join("\n\n");
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(result.data) }],
+    content: [{ type: "text" as const, text }],
   };
 }
 
