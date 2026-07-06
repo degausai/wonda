@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiGet, apiUpload } from "../api.js";
+import {
+  READ_TOOL_ANNOTATIONS,
+  WRITE_TOOL_ANNOTATIONS,
+} from "./annotations.js";
 
 export function registerMediaTools(server: McpServer): void {
   server.registerTool(
@@ -10,6 +14,7 @@ export function registerMediaTools(server: McpServer): void {
       title: "Upload Media",
       description:
         "Upload media from a URL. Downloads the file and uploads it to your Wonda media library. Returns a mediaId for use in other tools.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         url: z.string().url().describe("URL of the file to upload"),
       }),
@@ -79,6 +84,7 @@ export function registerMediaTools(server: McpServer): void {
     {
       title: "Get Media",
       description: "Get metadata for a specific media item by ID.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         mediaId: z.string().min(1).describe("Media ID"),
       }),
@@ -100,6 +106,7 @@ export function registerMediaTools(server: McpServer): void {
       title: "List Media",
       description:
         "List media in the account library. Filter by kind and source.",
+      annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         kind: z
           .enum(["image", "video", "audio"])

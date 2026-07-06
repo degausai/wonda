@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiGet } from "../api.js";
+import { READ_TOOL_ANNOTATIONS } from "./annotations.js";
 
 type JobEndpoint = {
   name: string;
@@ -45,6 +46,7 @@ export function registerJobTools(server: McpServer): void {
       {
         title: endpoint.title,
         description: endpoint.description,
+        annotations: READ_TOOL_ANNOTATIONS,
         inputSchema: z.object({
           jobId: z.string().min(1).describe(`The ${endpoint.paramName}`),
         }),

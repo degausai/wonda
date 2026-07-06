@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiPost } from "../api.js";
+import { WRITE_TOOL_ANNOTATIONS } from "./annotations.js";
 
 type GenerationEndpoint = {
   name: string;
@@ -85,6 +86,7 @@ export function registerGenerateTools(server: McpServer): void {
       {
         title: endpoint.title,
         description: endpoint.description,
+        annotations: WRITE_TOOL_ANNOTATIONS,
         inputSchema: generationInputSchema,
       },
       async (args) => {
@@ -107,6 +109,7 @@ export function registerGenerateTools(server: McpServer): void {
       title: "Analyze Video",
       description:
         "Extract a composite frame grid and audio transcript from a video. Returns an inferenceJobId — poll with get_inference_job until succeeded.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         mediaId: z.string().min(1).describe("Media ID of the video to analyze"),
         targetFrameCount: z

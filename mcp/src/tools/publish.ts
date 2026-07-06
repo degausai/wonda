@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiPost } from "../api.js";
+import { WRITE_TOOL_ANNOTATIONS } from "./annotations.js";
 
 export function registerPublishTools(server: McpServer): void {
   server.registerTool(
@@ -10,6 +11,7 @@ export function registerPublishTools(server: McpServer): void {
       title: "Publish to Instagram",
       description:
         "Publish a media item to Instagram. Requires a connected Instagram account. Returns an outputJobId — poll with get_publish_job until succeeded.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         mediaId: z.string().min(1).describe("Media ID to publish"),
         instagramAccountId: z
@@ -42,6 +44,7 @@ export function registerPublishTools(server: McpServer): void {
       title: "Publish to TikTok",
       description:
         "Publish a video to TikTok. Requires a connected TikTok account. Returns an outputJobId — poll with get_publish_job until succeeded.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         mediaId: z.string().min(1).describe("Media ID to publish"),
         tiktokAccountId: z
