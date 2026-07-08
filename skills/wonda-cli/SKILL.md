@@ -36,8 +36,12 @@ CLI and local stdio MCP path, keep using `wonda auth login` or
 
 ### Claude Cowork local relay
 
-Claude web and Cowork cannot load a local `.mcpb` bundle. To run actions on the
-user's own Mac and residential IP from Cowork, use the Wonda local relay:
+Claude Cowork (the desktop app) runs local MCP servers on the host, so it can
+load the `.mcpb` bundle or a local stdio `wonda-mcp` config directly, WAB
+writes included (verified 2026-07-07). Claude web cannot. The Wonda local
+relay is the alternative path: it lets the REMOTE connector (web or Cowork)
+run actions on the user's own Mac and residential IP without any local MCP
+config:
 
 1. Open `https://wonda.sh/download` while signed in and install the notarized
    Mac package.
@@ -225,6 +229,7 @@ wonda wab start [account]                     # spawn (offscreen by default; --v
 wonda wab stop [account]                      # graceful shutdown
 wonda wab show [account]                       # peek a background WAB on-screen to watch it (suspends the macOS focus guard); starts it offscreen first if needed
 wonda wab hide [account]                       # send a surfaced WAB back offscreen, resume silent background operation
+wonda wab screenshot [account]                 # capture the persona's current page as a PNG without surfacing the window; --json returns inline base64, --output writes a file, --tab/--full-page optional
 wonda wab menubar                              # macOS menu-bar control (🐱): click to Show/Hide running WABs; --stop to remove
 # macOS Dock menu: right-click a running WAB's Dock tile (the 🐱) for "Show on screen" / "Send to background" (same as wab show/hide). Each running persona has its own Dock tile and its menu controls only that persona. Opt out with WAB_DOCK_MENU=0.
 # macOS: a background WAB no longer steals focus or flashes the menu bar / Dock when it opens a new tab; the Dock tile stays, it just never comes to the foreground until you `wab show` it.
@@ -326,6 +331,8 @@ Every platform command (`linkedin`, `x`, `reddit`, `instagram`), reads AND write
   | visit                    | `visit`                               | 15          | 30  |
   | search                   | `search`, `search-posts`              | 25          | 50  |
   | **total** (all non-read) | any of the above                      | warn at 90% | 100 |
+
+`salesnav search` (Sales Navigator) is exempt: it carries no Commercial Use Limit, so it paces as an uncapped read instead of counting toward the `search` cap or the total/day.
 
 Caps are **SOFT by default**: an over-safe / over-max action prints a shadow-ban-risk warning to stderr and **proceeds**. Pass `--hard` (or set `mode: hard` in config) to make over-cap writes **abort** (exit 1) instead.
 
@@ -1441,7 +1448,14 @@ wonda linkedin reactions <activity-id>               # Reactions with reactor pr
 wonda linkedin comment-reactors <comment-url-or-activityId:commentId> # Reactions on a specific comment with reactor profiles + type
 wonda linkedin browser-bootstrap                     # Inject stored cookies into the WAB profile (one-time + on rotation)
 wonda linkedin comments <activity-id> --account <name> --via wab  # Commenters with profile + vanity (auto-spawns WAB)
-wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (DOM scrape via WAB; for social listening run `wonda skill get linkedin-social-listening`)
+wonda linkedin activity johndoe                      # A member's recent-activity feed. --type all (their posts + reshares, default) | comments (posts they commented on, with their own comment text) | reactions (posts they reacted to, with reaction type). Each item carries the referenced post's author (name + profile URL), text, and URL; --count N (default 20)
+wonda linkedin search-posts "<keyword>" --date-range past-week --account <name>  # Keyword to recent posts + author profile (Voyager content API over cookies by default, returns the activity id + exact post time; --via wab for the DOM-scrape fallback; for social listening run `wonda skill get linkedin-social-listening`)
+
+# Sales Navigator (seat-gated: the LinkedIn account needs an SN seat; cookie reads, each verb also runs as a cloud twin action)
+wonda linkedin salesnav search "VP marketing" --seniority 210 --region 100506914  # Faceted lead search; also --industry/--company/--function/--connection-of; '~' prefix excludes a value; --csv exports
+wonda linkedin salesnav search --school 235785 --past-company 1009 --past-title 3 --years-of-experience 4  # Background facets: school/university, past employer, past job title, years-of-experience buckets (1 <1y, 2 1-2y, 3 3-5y, 4 6-10y, 5 10+y); --title filters current job title
+wonda linkedin salesnav facets SCHOOL "HEC Paris"    # Resolve a facet value name to the id the search flags take (no args lists the filter types; YEARS_OF_EXPERIENCE has no typeahead, pass the bucket ids directly)
+wonda linkedin salesnav --help                       # More seat-gated reads: saved-searches, lists, profile, typeahead, recommended leads|companies, alerts, recent, personas, notifications, warm-intro, insights
 
 # WAB lifecycle (see `wonda wab --help` for the full surface: start/stop/status/install/bind/sync-cookies/logs)
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON; --company-detail=false skips company page lookups)
@@ -1499,7 +1513,7 @@ Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--
 
 **LinkedIn sent invitation tracking:** `wonda linkedin sent-invitations` is read-only and defaults to `--via cookies`. It lists live pending outgoing invites and, by default, reconciles them with the local WAB connect audit to label audited targets as `accepted`, `pending`, or `withdrawn`; pass `--reconcile=false` for the raw paginated pending list or `--no-connection-check` to skip per-target connection-status reads. `--via wab` routes the same reads through the account persona. LinkedIn's sent-list Voyager endpoints currently churn, so the command falls back to the read-only sent-invitations manager page payload when Voyager rejects the sent list. `--via public` and `--via api` are not supported.
 
-**Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--company-detail=false` to skip company page lookups and keep only inlined employer identity (`name`, `urn`, `universalName`). Use `--max-profiles N` to cap the batch (default 100, hard ceiling 100 unless `--override-max-profiles` is set) and `--out file.json` to write to disk. `--profile-source cookies|public` controls only per-profile detail enrichment; engager collection still uses logged-in LinkedIn access.
+**Engager enrichment:** `wonda linkedin enrich-engagers --activity-id <id>` scrapes reactors (and optionally commenters via `--comments`), then fetches each engager's profile + current employer + company page, and emits a single joined JSON document keyed by vanity with `profile` and `currentEmployer` (industry, headcount, HQ, description, employee count) blocks per engager. Use `--company-detail=false` to skip company page lookups and keep only inlined employer identity (`name`, `urn`, `universalName`). Use `--max-profiles N` to cap the batch (default 250, hard ceiling 250 unless `--override-max-profiles` is set) and `--out file.json` to write to disk. `--profile-source cookies|public` controls only per-profile detail enrichment; engager collection still uses logged-in LinkedIn access.
 
 For ICP qualification of post engagers, run `wonda skill get linkedin-icp-qualify`.
 
@@ -1666,11 +1680,11 @@ wonda twin update <persona> --spend-cap <microdollars>   # Change caps + alert w
 wonda twin pause <persona>                               # Pause a session
 wonda twin resume <persona>                              # Resume a paused session
 wonda twin needs-auth <persona>                          # Flag a session as needing re-auth
-wonda twin needs-auth-view <persona> --platform x        # Flag needs_auth and mint a streamed view URL using the existing cloud-view route.
+wonda twin needs-auth-view <persona> --platform x        # Flag needs_auth and mint a hosted login session. Returns a browser-openable `viewerUrl` (the raw `wsUrl` is included for custom viewers). A human opens viewerUrl to sign in; login is human-gated (you cannot type credentials for them). Token ~20 min TTL; one twin viewable at a time (open sequentially).
 wonda twin recover <persona>                             # Clear an ACTIVE critical safety signal (captcha / unusual-activity / account-restricted) AFTER you have resolved it in-browser. Those criticals do NOT change the twin status, so the safety gate hard-blocks the persona with NO auto-resume until you clear it; this appends a 'recovered' marker the gate reads to stop treating the critical as active. A security checkpoint / needs_auth is cleared by re-login (wonda twin login) instead, not this. -> { recovered, clearedSignalType, persona }
 wonda twin login <persona> --platform instagram          # Open a born-in-cloud streamed login in a DEDICATED tab inside your local WAB (the cloud login looks like our antidetect browser, just on the cloud; an existing WAB session in your other tabs is left untouched). Spawns the persona's WAB visibly and opens the viewer at <web-base>/twin-login.html (token in the URL fragment); prints the viewer URL too so you can open it in any browser. On sign-in the stream stops and a Wonda "you are signed in" confirmation replaces it (the platform feed is hidden as you sign in). Unmetered. (--platform <x|linkedin|reddit|instagram>, --web-base default https://wonda.sh)
 wonda twin seed-from-cookies <persona> --platform x      # Start a cloud seed job from browser cookies previously stored with /social-tokens. The run output carries per-platform login-status results.
-wonda twin login-automated <persona> --platform x        # Attempt credential-vault onboarding; returns needs_human with a view URL when the route cannot finish safely without a human.
+wonda twin login-automated <persona> --platform x        # Attempt credential-vault onboarding; returns { status: needs_human, viewerUrl } when the route cannot finish safely without a human. Open viewerUrl in a browser to complete the sign-in, then re-check with login-status.
 wonda twin login-status <persona> --platform x           # Read-only advisory signed-in check from a warm control session.
 wonda twin sync-profile <persona> --cookies-only         # Promote local WAB / local cookie jars to the cloud twin profile. Forces local WAB cookie sync first when that persona is running. Use --platform <x|linkedin|reddit|instagram> to limit scope, --dry-run to inspect, --include-storage to upload Chromium storage too.
 wonda twin export-cookies <persona> --platform linkedin  # Import sanitized .seeded-cookies from the current cloud twin generation into local ~/.wonda/<platform>-cookies/<account>.json. Refuses newer local jars unless --force; --dry-run shows planned writes; --account-label overrides the local label; --inject-running explicitly pushes imported cookies into already-running bound WAB personas.

@@ -398,7 +398,11 @@ export function registerTwinTools(server: McpServer): void {
     {
       title: "Automated Twin Login",
       description:
-        "Attempt credential-vault login automation for a cloud twin. May return a human view URL.",
+        "Attempt credential-vault login automation for a cloud twin. Cloud-twin " +
+        "login is human-gated: when the vault flow cannot finish safely, this " +
+        "returns { status: 'needs_human', viewerUrl }. Give the viewerUrl to the " +
+        "user to open in a browser and complete the sign-in; you cannot log in " +
+        "for them. Re-check with twin_login_status afterwards.",
       annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
@@ -437,9 +441,15 @@ export function registerTwinTools(server: McpServer): void {
   server.registerTool(
     "twin_needs_auth_view",
     {
-      title: "Twin Needs Auth View",
+      title: "Twin Needs Auth (re-login)",
       description:
-        "Flag a cloud twin as needing re-authentication, then mint a hosted view URL.",
+        "Flag a cloud twin as needing re-authentication and mint a hosted LOGIN " +
+        "session for it. Returns { needsAuth, login: { viewerUrl, wsUrl, runId, " +
+        "expiresAt } }. Give login.viewerUrl to the user to open in a browser and " +
+        "sign in; on sign-in the twin flips back to active (this uses the login " +
+        "flow, not view, so it actually clears needs_auth). Use this for a signed-" +
+        "out twin. Token expires in ~20 min (call again for a fresh one); only one " +
+        "twin can be logged in at a time, so do them sequentially.",
       annotations: WRITE_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         persona: z.string().min(1),
@@ -453,13 +463,16 @@ export function registerTwinTools(server: McpServer): void {
       });
       if (!needsAuth.ok) return toolResult(needsAuth);
 
-      const view = await apiPost(`/twin/view/${encodeURIComponent(persona)}`, {
-        platform,
-      });
+      // Login flow (kind:login), NOT view: the view flow snapshots but never
+      // clears needs_auth, so a re-login via /twin/view leaves the twin flagged.
+      const login = await apiPost(
+        `/twin/login/${encodeURIComponent(persona)}`,
+        { platform },
+      );
       return toolResult(
-        view.ok
-          ? { ok: true, data: { needsAuth: needsAuth.data, view: view.data } }
-          : view,
+        login.ok
+          ? { ok: true, data: { needsAuth: needsAuth.data, login: login.data } }
+          : login,
       );
     },
   );

@@ -1,6 +1,6 @@
 {
   "name": "@degausai/wonda-mcp",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "MCP server for the Wonda content creation API — images, video, music, audio, editing, and publishing",
   "type": "module",
   "bin": {
@@ -29,7 +29,7 @@
     "test:types": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "check:annotations": "npm run build && node scripts/check-tool-annotations.mjs",
-    "test": "npm run build && node --test test/*.test.mjs && node scripts/check-api-compat.mjs",
+    "test": "npm run build && node --test test/*.test.mjs && node scripts/check-api-compat.mjs && node scripts/check-twin-actions.mjs",
     "pack:mcpb": "npm run build && node scripts/build-mcpb.mjs"
   },
   "dependencies": {

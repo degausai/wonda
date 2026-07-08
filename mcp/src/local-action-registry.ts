@@ -8,7 +8,23 @@ export type LocalActionSpec = {
   requestedSlots: Record<string, number>;
   variableSlots: boolean;
   toolName: string;
+  via: "cookies" | "wab";
+  payloadFields: PayloadFieldSpec[];
+  supportsPagination: boolean;
+  // Overrides the default 180s exec timeout for long-paced actions.
+  timeoutMs?: number;
   buildArgv: (payload: unknown, persona: string, account?: string) => string[];
+};
+
+// Declarative payload-field metadata mirroring what buildArgv reads, so tool
+// input schemas can list real field names instead of a free-form record.
+// "value" fields accept string | number | boolean (buildArgv stringifies).
+export type PayloadFieldSpec = {
+  name: string;
+  required: boolean;
+  kind: "string" | "value" | "stringArray";
+  enum?: string[];
+  maxCount?: number;
 };
 
 type Payload = Record<string, unknown>;
@@ -20,6 +36,52 @@ type MediaSpec = { flag: "--media" | "--attach"; maxCount: number };
 const DEFAULT_DURATION_MS = 120_000;
 const MAX_DURATION_MS = 180_000;
 const ENGAGE_COMMENTERS_DEFAULT_DURATION_MS = 180_000;
+
+// Actions whose buildArgv reads fields the generic derivation cannot see
+// (function positionals/flags). Overrides replace the derived list wholesale.
+const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
+  "linkedin/connection-status": [
+    { name: "targets", required: true, kind: "stringArray" },
+  ],
+  "linkedin/activity": [
+    { name: "target", required: true, kind: "string" },
+    {
+      name: "type",
+      required: false,
+      kind: "string",
+      enum: ["all", "comments", "reactions"],
+    },
+    { name: "count", required: false, kind: "value" },
+  ],
+  "linkedin/enrich-engagers": [
+    { name: "activityId", required: true, kind: "string" },
+    { name: "reactions", required: false, kind: "value" },
+    { name: "comments", required: false, kind: "value" },
+    { name: "maxProfiles", required: false, kind: "value" },
+    { name: "companyDetail", required: false, kind: "value" },
+    {
+      name: "profileSource",
+      required: false,
+      kind: "string",
+      enum: ["cookies", "public"],
+    },
+  ],
+  "reddit/vote": [
+    { name: "fullname", required: true, kind: "string" },
+    {
+      name: "vote",
+      required: false,
+      kind: "string",
+      enum: ["up", "down", "unvote"],
+    },
+    { name: "postId", required: false, kind: "value" },
+  ],
+  "x/dm-start": [
+    { name: "handle", required: true, kind: "string" },
+    { name: "text", required: true, kind: "string" },
+    { name: "dryRun", required: false, kind: "value" },
+  ],
+};
 
 const ACTION_DEFINITIONS = [
   read("linkedin", "me", []),
@@ -36,6 +98,7 @@ const ACTION_DEFINITIONS = [
     ],
   ),
   read("linkedin", "posts", ["target"]),
+  read("linkedin", "post-details", ["target"]),
   read("linkedin", "analytics", ["target"]),
   read("linkedin", "comments", ["target"]),
   read(
@@ -120,6 +183,103 @@ const ACTION_DEFINITIONS = [
   feedEngage("linkedin", "like"),
   engageCommenters(),
   read("linkedin", "enrich", ["target"]),
+  write("linkedin", "follow", "follow", ["target"]),
+  read(
+    "linkedin",
+    "activity",
+    ["target"],
+    [
+      ["--type", "type"],
+      ["--count", "count"],
+    ],
+    "cookies",
+    false,
+  ),
+  read("linkedin", "comment-reactors", ["commentUrn"]),
+  write("linkedin", "delete-comment", "comment", ["target"]),
+  // 25 profiles at 4-12s pacing runs past the default 180s exec timeout;
+  // mirror the server budget. maxProfiles is capped like the server schema.
+  withTimeout(
+    read(
+      "linkedin",
+      "enrich-engagers",
+      [],
+      [
+        ["--activity-id", "activityId"],
+        [
+          (payload) =>
+            payload.reactions === false ? "--reactions=false" : undefined,
+        ],
+        ["--comments", "comments"],
+        [
+          (payload) => {
+            const value = payload.maxProfiles;
+            if (value === undefined) return "--max-profiles=10";
+            if (
+              typeof value !== "number" ||
+              !Number.isFinite(value) ||
+              value < 1 ||
+              value > 25
+            ) {
+              throw new Error("maxProfiles must be a number between 1 and 25");
+            }
+            return `--max-profiles=${value}`;
+          },
+        ],
+        [
+          (payload) =>
+            payload.companyDetail === false
+              ? "--company-detail=false"
+              : undefined,
+        ],
+        ["--profile-source", "profileSource"],
+      ],
+      "cookies",
+      false,
+    ),
+    310_000,
+  ),
+  salesnav("search", {
+    optionalPositionals: ["keywords"],
+    csvFlags: [
+      ["--seniority", "seniority"],
+      ["--region", "region"],
+      ["--industry", "industry"],
+      ["--company", "company"],
+      ["--function", "function"],
+      ["--connection-of", "connectionOf"],
+      ["--title", "title"],
+      ["--past-title", "pastTitle"],
+      ["--past-company", "pastCompany"],
+      ["--school", "school"],
+      ["--years-of-experience", "yearsOfExperience"],
+    ],
+    pagination: true,
+  }),
+  salesnav("facets", { optionalPositionals: ["type", "query"] }),
+  salesnav("typeahead", { positionals: ["query"] }),
+  salesnav("profile", { variadicField: { name: "urns", maxCount: 50 } }),
+  salesnav("insights", { positionals: ["urn"] }),
+  salesnav("warm-intro", {
+    positionals: ["urn"],
+    flags: [["--count", "count"]],
+  }),
+  salesnav("notifications", { flags: [["--count", "count"]] }),
+  salesnav("spotlights", {
+    flags: [
+      ["--list", "list"],
+      ["--limit", "limit"],
+      ["--changed-within-days", "changedWithinDays"],
+      ["--posted-within-days", "postedWithinDays"],
+    ],
+  }),
+  salesnav("recommended", { subVerb: "leads", pagination: true }),
+  salesnav("recommended", { subVerb: "companies", pagination: true }),
+  salesnav("alerts"),
+  salesnav("lists"),
+  salesnav("personas"),
+  salesnav("recent"),
+  salesnav("saved-searches"),
 
   read("reddit", "search", ["query"]),
   read("reddit", "subreddit", ["target"]),
@@ -246,6 +406,20 @@ const ACTION_DEFINITIONS = [
   write("x", "unfollow", "follow", ["handle"]),
   write("x", "delete", "delete", ["tweetId"]),
   feedEngage("x", "like"),
+  xDm("inbox", "read", []),
+  xDm("read", "read", ["conversationId"]),
+  xDm("requests", "read", []),
+  xDm("send", "write", ["conversationId", "text"], [["--dry-run", "dryRun"]]),
+  xDm("accept", "write", ["conversationId"], [["--dry-run", "dryRun"]]),
+  xDm(
+    "start",
+    "write",
+    ["handle"],
+    [
+      ["--text", "text"],
+      ["--dry-run", "dryRun"],
+    ],
+  ),
 
   read("instagram", "saved", []),
   read("instagram", "comments", ["target"]),
@@ -267,6 +441,7 @@ function read(
   positionals: string[] | ((payload: Payload) => string[]),
   flags: FlagSpec[] = [],
   via: "cookies" | "wab" = "cookies",
+  pagination = true,
 ): LocalActionSpec {
   return actionSpec({
     platform,
@@ -277,6 +452,7 @@ function read(
     positionals,
     flags,
     via,
+    pagination,
   });
 }
 
@@ -341,7 +517,9 @@ function actionSpec(args: {
   flags: FlagSpec[];
   media?: MediaSpec;
   via?: "cookies" | "wab";
+  pagination?: boolean;
 }): LocalActionSpec {
+  const pagination = args.pagination ?? true;
   return {
     platform: args.platform,
     action: args.action,
@@ -349,6 +527,11 @@ function actionSpec(args: {
     requestedSlots: args.requestedSlots,
     variableSlots: args.variableSlots,
     toolName: `${args.platform}_${args.action.replaceAll("-", "_")}`,
+    via: args.via ?? viaForKind(args.kind),
+    payloadFields:
+      FIELD_OVERRIDES[`${args.platform}/${args.action}`] ??
+      derivePayloadFields(args.positionals, args.flags, args.media),
+    supportsPagination: pagination,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
       const argv = [
@@ -366,7 +549,7 @@ function actionSpec(args: {
       if (args.kind === "write") argv.push("--no-auto-persona");
       pushFlags(argv, args.flags, parsed);
       pushMedia(argv, args.media, parsed);
-      pushCommonPagination(argv, parsed);
+      if (pagination) pushCommonPagination(argv, parsed);
       return argv;
     },
   };
@@ -387,6 +570,9 @@ function chatActionSpec(args: {
     requestedSlots: args.requestedSlots,
     variableSlots: args.variableSlots,
     toolName: `reddit_chat_${args.verb.replaceAll("-", "_")}`,
+    via: viaForKind(args.kind),
+    payloadFields: derivePayloadFields(args.positionals, args.flags, undefined),
+    supportsPagination: false,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
       const argv = [
@@ -409,6 +595,155 @@ function chatActionSpec(args: {
   };
 }
 
+// Sales Navigator commands nest under `linkedin salesnav <verb> [subVerb]`
+// and are all cookie-transport reads (the CLI ignores --via for them).
+function salesnav(
+  verb: string,
+  opts: {
+    subVerb?: string;
+    positionals?: string[];
+    optionalPositionals?: string[];
+    variadicField?: { name: string; maxCount: number };
+    csvFlags?: [flag: string, field: string][];
+    flags?: FlagSpec[];
+    pagination?: boolean;
+  } = {},
+): LocalActionSpec {
+  const action =
+    opts.subVerb === undefined
+      ? `salesnav-${verb}`
+      : `salesnav-${verb}-${opts.subVerb}`;
+  const payloadFields: PayloadFieldSpec[] = [
+    ...(opts.positionals ?? []).map(
+      (name): PayloadFieldSpec => ({ name, required: true, kind: "string" }),
+    ),
+    ...(opts.optionalPositionals ?? []).map(
+      (name): PayloadFieldSpec => ({ name, required: false, kind: "string" }),
+    ),
+    ...(opts.variadicField === undefined
+      ? []
+      : [
+          {
+            name: opts.variadicField.name,
+            required: true,
+            kind: "stringArray",
+            maxCount: opts.variadicField.maxCount,
+          } satisfies PayloadFieldSpec,
+        ]),
+    ...(opts.csvFlags ?? []).map(
+      ([, field]): PayloadFieldSpec => ({
+        name: field,
+        required: false,
+        kind: "stringArray",
+      }),
+    ),
+    ...(opts.flags ?? []).flatMap(([flagOrFactory, field]) =>
+      typeof flagOrFactory === "function" || field === undefined
+        ? []
+        : [
+            {
+              name: field,
+              required: false,
+              kind: "value",
+            } satisfies PayloadFieldSpec,
+          ],
+    ),
+  ];
+  return {
+    platform: "linkedin",
+    action,
+    kind: "read",
+    requestedSlots: {},
+    variableSlots: false,
+    toolName: `linkedin_${action.replaceAll("-", "_")}`,
+    via: "cookies",
+    payloadFields,
+    supportsPagination: opts.pagination ?? false,
+    buildArgv(payload, persona, account) {
+      const parsed = requirePayloadObject(payload);
+      const argv = ["--json", "linkedin", "salesnav", verb];
+      if (opts.subVerb !== undefined) argv.push(opts.subVerb);
+      argv.push(...fields(parsed, opts.positionals ?? []));
+      for (const name of opts.optionalPositionals ?? []) {
+        const value = optionalStringField(parsed, name);
+        if (value === undefined) break;
+        argv.push(value);
+      }
+      if (opts.variadicField !== undefined) {
+        const values = stringArrayField(parsed, opts.variadicField.name);
+        if (values.length === 0) {
+          throw new Error(`${opts.variadicField.name} is required`);
+        }
+        if (values.length > opts.variadicField.maxCount) {
+          throw new Error(
+            `${opts.variadicField.name} must have at most ${opts.variadicField.maxCount} items`,
+          );
+        }
+        argv.push(...values);
+      }
+      argv.push(
+        "--account",
+        account ?? persona,
+        "--persona",
+        persona,
+        "--via",
+        "cookies",
+      );
+      for (const [flag, field] of opts.csvFlags ?? []) {
+        pushCsvFlag(argv, flag, parsed[field]);
+      }
+      pushFlags(argv, opts.flags ?? [], parsed);
+      if (opts.pagination === true) pushCommonPagination(argv, parsed);
+      return argv;
+    },
+  };
+}
+
+// X DMs nest under `x dm <verb>`. Reads default to cookies; writes are
+// wab-only and additionally require a pre-saved encrypted XChat passcode
+// (`wonda x dm passcode set`, terminal-only).
+function xDm(
+  verb: string,
+  kind: LocalActionKind,
+  positionals: string[],
+  flags: FlagSpec[] = [],
+): LocalActionSpec {
+  const action = `dm-${verb}`;
+  return {
+    platform: "x",
+    action,
+    kind,
+    requestedSlots: kind === "write" ? { message: 1 } : {},
+    variableSlots: false,
+    toolName: `x_dm_${verb.replaceAll("-", "_")}`,
+    via: viaForKind(kind),
+    payloadFields:
+      FIELD_OVERRIDES[`x/${action}`] ??
+      derivePayloadFields(positionals, flags, undefined),
+    supportsPagination: kind === "read",
+    buildArgv(payload, persona, account) {
+      const parsed = requirePayloadObject(payload);
+      const argv = [
+        "--json",
+        "x",
+        "dm",
+        verb,
+        ...fields(parsed, positionals),
+        "--account",
+        account ?? persona,
+        "--persona",
+        persona,
+        "--via",
+        viaForKind(kind),
+      ];
+      if (kind === "write") argv.push("--no-auto-persona");
+      pushFlags(argv, flags, parsed);
+      if (kind === "read") pushCommonPagination(argv, parsed);
+      return argv;
+    },
+  };
+}
+
 function feedEngage(
   platform: LocalActionPlatform,
   slot: string,
@@ -420,6 +755,9 @@ function feedEngage(
     requestedSlots: { [slot]: 1 },
     variableSlots: false,
     toolName: `${platform}_feed_engage`,
+    via: "wab",
+    payloadFields: feedEngagePayloadFields(platform),
+    supportsPagination: false,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
       const argv = ["--json", platform, "feed-engage"];
@@ -486,6 +824,17 @@ function engageCommenters(): LocalActionSpec {
     requestedSlots: { like: 25, comment: 25, connect: 25 },
     variableSlots: true,
     toolName: "linkedin_engage_commenters",
+    via: "wab",
+    payloadFields: [
+      { name: "post", required: true, kind: "string" },
+      { name: "actions", required: false, kind: "stringArray" },
+      { name: "maxCommenters", required: false, kind: "value" },
+      { name: "durationMs", required: false, kind: "value" },
+      { name: "replyText", required: false, kind: "string" },
+      { name: "connectNote", required: false, kind: "string" },
+      { name: "dryRun", required: false, kind: "value" },
+    ],
+    supportsPagination: false,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
       const actions = stringArrayField(parsed, "actions", ["like"]);
@@ -527,6 +876,73 @@ function engageCommenters(): LocalActionSpec {
 
 function viaForKind(kind: LocalActionKind): "cookies" | "wab" {
   return kind === "read" ? "cookies" : "wab";
+}
+
+function withTimeout(
+  spec: LocalActionSpec,
+  timeoutMs: number,
+): LocalActionSpec {
+  return { ...spec, timeoutMs };
+}
+
+function derivePayloadFields(
+  positionals: string[] | ((payload: Payload) => string[]),
+  flags: FlagSpec[],
+  media: MediaSpec | undefined,
+): PayloadFieldSpec[] {
+  const fields: PayloadFieldSpec[] = [];
+  if (typeof positionals !== "function") {
+    for (const name of positionals) {
+      fields.push({ name, required: true, kind: "string" });
+    }
+  }
+  for (const [flagOrFactory, field] of flags) {
+    if (typeof flagOrFactory === "function" || field === undefined) continue;
+    fields.push({ name: field, required: false, kind: "value" });
+  }
+  if (media !== undefined) {
+    fields.push({
+      name: "mediaRefs",
+      required: false,
+      kind: "stringArray",
+      maxCount: media.maxCount,
+    });
+  }
+  return fields;
+}
+
+function feedEngagePayloadFields(
+  platform: LocalActionPlatform,
+): PayloadFieldSpec[] {
+  const fields: PayloadFieldSpec[] = [
+    { name: "authors", required: false, kind: "stringArray" },
+    { name: "keywords", required: false, kind: "stringArray" },
+  ];
+  if (platform === "reddit") {
+    fields.push({ name: "subreddits", required: false, kind: "stringArray" });
+  }
+  fields.push(
+    { name: "reply", required: false, kind: "value" },
+    { name: "replyStyle", required: false, kind: "value" },
+    { name: "personaReply", required: false, kind: "value" },
+    { name: "relevanceThreshold", required: false, kind: "value" },
+    { name: "relevancePrompt", required: false, kind: "string" },
+    { name: "maxReply", required: false, kind: "value" },
+    { name: "perDayCap", required: false, kind: "value" },
+    { name: "maxScan", required: false, kind: "value" },
+    { name: "dryRun", required: false, kind: "value" },
+    { name: "durationMs", required: false, kind: "value" },
+    { name: "maxEngage", required: false, kind: "value" },
+    { name: "engageComments", required: false, kind: "value" },
+    { name: "engageCommentsFrom", required: false, kind: "string" },
+    { name: "maxCommentEngage", required: false, kind: "value" },
+    { name: "navigate", required: false, kind: "string" },
+    { name: "scrollMode", required: false, kind: "string" },
+    { name: "scanIntervalMs", required: false, kind: "value" },
+    { name: "reactions", required: false, kind: "stringArray" },
+    { name: "expandPosts", required: false, kind: "value" },
+  );
+  return fields;
 }
 
 function positionalsFor(

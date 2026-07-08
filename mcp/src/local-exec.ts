@@ -18,6 +18,10 @@ import {
   formatVersion,
 } from "./version.js";
 
+// Bracket access via an index signature: this module is also compiled inside
+// apps/mcp-remote, whose environment.d.ts closes NodeJS.ProcessEnv.
+const env: Record<string, string | undefined> = process.env;
+
 type ExecFileCallback = (
   error: Error | null,
   stdout: string | Buffer,
@@ -34,6 +38,10 @@ type ExecFileFn = (
 type RunLocalVerbOptions = {
   execFile?: ExecFileFn;
   timeoutMs?: number;
+  // Parse stdout as the result even on a non-zero exit. `wab check` prints its
+  // structured verdict and exits 1 when the session is not active; the JSON is
+  // the answer, not an error.
+  stdoutJsonOnError?: boolean;
 };
 
 export type LocalVerbArgs = {
@@ -78,7 +86,126 @@ export async function runLocalVerb(
     };
   }
 
-  return runWonda(argv, options);
+  return runWonda(argv, { timeoutMs: spec.timeoutMs, ...options });
+}
+
+export function runWabStatus(
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  return runWonda(["--json", "wab", "status"], {
+    timeoutMs: 30_000,
+    ...options,
+  });
+}
+
+// Mirrors the CLI's platform-login registry (cli/wondercat/wab/platform_login.go).
+export const PLATFORM_LOGIN_URLS: Record<string, string> = {
+  linkedin: "https://www.linkedin.com/login",
+  x: "https://x.com/i/flow/login",
+  reddit: "https://www.reddit.com/login",
+  instagram: "https://www.instagram.com/accounts/login/",
+};
+
+// Opens a visible WAB at the platform's login page so the USER can sign in
+// manually. Mirrors the first half of `wonda wab login` (which is
+// TTY-interactive and cannot run from the MCP); cookies persist to the WAB
+// profile via Set-Cookie as the user logs in.
+export async function runWabLoginOpen(
+  platform: string,
+  persona: string | undefined,
+  account: string | undefined,
+): Promise<ApiResult<unknown>> {
+  const loginUrl = PLATFORM_LOGIN_URLS[platform];
+  if (loginUrl === undefined) {
+    return {
+      ok: false,
+      error: `Unknown platform ${platform} (supported: ${Object.keys(PLATFORM_LOGIN_URLS).join(", ")})`,
+      status: 400,
+    };
+  }
+  const shown = await runWabVisibility("show", persona, account);
+  if (!shown.ok) return shown;
+  return runWabOpen(loginUrl, persona, account);
+}
+
+// Verifies a platform session via `wab check` (navigates the WAB to a
+// known-authenticated URL). Exits 1 with a structured verdict when not
+// active, so stdout is parsed either way.
+export async function runWabLoginCheck(
+  platform: string,
+  persona: string | undefined,
+  account: string | undefined,
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  const resolved = await resolvePersona(persona, account);
+  return runWonda(["--json", "wab", "check", resolved, platform], {
+    timeoutMs: 60_000,
+    stdoutJsonOnError: true,
+    ...options,
+  });
+}
+
+// `wab screenshot` captures the persona's current page offscreen and, in
+// --json mode, returns {path, base64, mimeType} with the PNG inline.
+export async function runWabScreenshot(
+  persona: string | undefined,
+  account: string | undefined,
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  const resolved = await resolvePersona(persona, account);
+  return runWonda(["--json", "wab", "screenshot", resolved], {
+    timeoutMs: 120_000,
+    ...options,
+  });
+}
+
+// `wab start --open` navigates the persona's default tab (spawning the WAB
+// first if needed) and brings the window forward. Target is a platform key
+// (linkedin|x|reddit|instagram) or a full http(s) URL; the CLI validates it.
+export async function runWabOpen(
+  target: string,
+  persona: string | undefined,
+  account: string | undefined,
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  const resolved = await resolvePersona(persona, account);
+  const result = await runWonda(["wab", "start", resolved, "--open", target], {
+    timeoutMs: 120_000,
+    ...options,
+  });
+  if (!result.ok) return result;
+  return {
+    ...result,
+    data: {
+      persona: resolved,
+      opened: target,
+      windowTitle: `Wonda · ${resolved}`,
+    },
+  };
+}
+
+// `wab show` starts the persona's WAB offscreen first when it isn't running,
+// so the cold-start path needs the generous timeout.
+export async function runWabVisibility(
+  action: "show" | "hide",
+  persona: string | undefined,
+  account: string | undefined,
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  const resolved = await resolvePersona(persona, account);
+  const result = await runWonda(["wab", action, resolved], {
+    timeoutMs: action === "show" ? 120_000 : 30_000,
+    ...options,
+  });
+  if (!result.ok) return result;
+  return {
+    ...result,
+    data: {
+      persona: resolved,
+      visible: action === "show",
+      windowTitle: `Wonda · ${resolved}`,
+    },
+  };
 }
 
 export async function buildLocalActionArgv(
@@ -174,7 +301,7 @@ async function runWonda(
   argv: string[],
   options: RunLocalVerbOptions,
 ): Promise<ApiResult<unknown>> {
-  const binary = process.env.WONDA_BIN ?? "wonda";
+  const binary = env["WONDA_BIN"] ?? "wonda";
   const execFileImpl = options.execFile ?? execFile;
   const noticesPromise = getVersionNotices().catch((): VersionNotices => ({}));
 
@@ -200,6 +327,13 @@ async function runWonda(
   const stderrText = bufferToString(execResult.stderr).trim();
 
   if (execResult.error !== null) {
+    if (options.stdoutJsonOnError === true && stdoutText.length > 0) {
+      try {
+        return { ok: true, data: JSON.parse(stdoutText), status: 200 };
+      } catch {
+        // Fall through to the normal error shape.
+      }
+    }
     const message = stderrText || execResult.error.message;
     return {
       ok: false,
@@ -292,7 +426,7 @@ async function resolvePersona(
 ): Promise<string> {
   if (persona !== undefined && persona.trim() !== "") return persona;
   if (account !== undefined && account.trim() !== "") return account;
-  const envDefault = process.env.WONDA_DEFAULT_ACCOUNT;
+  const envDefault = env["WONDA_DEFAULT_ACCOUNT"];
   if (envDefault !== undefined && envDefault.trim() !== "") return envDefault;
   const configDefault = await readDefaultAccount();
   if (configDefault !== undefined) return configDefault;
