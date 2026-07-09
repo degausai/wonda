@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { ApiResult } from "../api.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { apiPost } from "../api.js";
 import {
   PLATFORM_LOGIN_URLS,
   runWabLoginCheck,
@@ -24,21 +25,25 @@ const platformField = z
   .enum(Object.keys(PLATFORM_LOGIN_URLS) as [string, ...string[]])
   .describe("Platform to log into");
 
-// Local mode only: these drive the on-device Wonda Automation Browser through
-// the host wonda binary, so agents never need a computer-use tool for it.
+// wab tools register in BOTH modes. In local mode they shell out to the on-device
+// wonda binary; in remote mode (the cloud connector) they forward each command to
+// the user's paired relay via POST /twin/sessions/{persona}/wab/{command}, which
+// runs the exact same `wonda wab` argv on the user's Mac. Either way they drive a
+// real browser on the user's machine, so an agent NEVER needs a computer-use tool.
 export function registerWabTools(server: McpServer): void {
-  if (!checkIsLocalMode()) return;
+  const isLocal = checkIsLocalMode();
 
   server.registerTool(
     "wab_status",
     {
       title: "WAB Status",
       description:
-        'List the local Wonda Automation Browser (WAB) personas on this machine and whether each browser is running (PID, last activity, log and command-socket paths). The WAB runs offscreen by default; call wab_show to surface it as "Wonda · <persona>".',
+        'List the Wonda Automation Browser (WAB) personas on the user\'s machine and whether each browser is running (PID, last activity). The WAB runs offscreen by default; call wab_show to surface it as "Wonda · <persona>".',
       annotations: READ_TOOL_ANNOTATIONS,
-      inputSchema: z.object({}),
+      inputSchema: z.object({ persona: personaField }),
     },
-    async () => toolResultFrom(await runWabStatus()),
+    async () =>
+      toolResultFrom(isLocal ? await runWabStatus() : await remoteWabStatus()),
   );
 
   server.registerTool(
@@ -46,12 +51,16 @@ export function registerWabTools(server: McpServer): void {
     {
       title: "WAB Show",
       description:
-        'Bring the persona\'s Wonda Automation Browser window on screen so the user can watch the live session (starts it offscreen first if it is not running). The window appears as "Wonda · <persona>". This runs on the host directly: never use a computer-use or desktop-control tool to open the WAB. Once shown, the user sees the window themselves; no screenshot is needed.',
+        "Bring the persona's Wonda Automation Browser window on screen so the user can watch the live session (starts it offscreen first if it is not running). The window appears as \"Wonda · <persona>\". This runs on the user's machine directly: never use a computer-use or desktop-control tool to open the WAB. Once shown, the user sees the window themselves; no screenshot is needed.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({ persona: personaField }),
     },
     async ({ persona }) =>
-      toolResultFrom(await runWabVisibility("show", persona, undefined)),
+      toolResultFrom(
+        isLocal
+          ? await runWabVisibility("show", persona, undefined)
+          : await remoteWabVisibility("show", persona),
+      ),
   );
 
   server.registerTool(
@@ -64,7 +73,11 @@ export function registerWabTools(server: McpServer): void {
       inputSchema: z.object({ persona: personaField }),
     },
     async ({ persona }) =>
-      toolResultFrom(await runWabVisibility("hide", persona, undefined)),
+      toolResultFrom(
+        isLocal
+          ? await runWabVisibility("hide", persona, undefined)
+          : await remoteWabVisibility("hide", persona),
+      ),
   );
 
   server.registerTool(
@@ -72,7 +85,7 @@ export function registerWabTools(server: McpServer): void {
     {
       title: "WAB Open",
       description:
-        'Navigate the persona\'s Wonda Automation Browser to a platform or URL (starts the browser first if needed) and bring the window forward. Use after wab_show when the user asks to go somewhere, e.g. "navigate to linkedin". This runs on the host directly; never use a computer-use tool for it.',
+        "Navigate the persona's Wonda Automation Browser to a platform or URL (starts the browser first if needed) and bring the window forward. Use after wab_show when the user asks to go somewhere, e.g. \"navigate to linkedin\". This runs on the user's machine directly; never use a computer-use tool for it.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({
         target: z
@@ -85,7 +98,11 @@ export function registerWabTools(server: McpServer): void {
       }),
     },
     async ({ target, persona }) =>
-      toolResultFrom(await runWabOpen(target, persona, undefined)),
+      toolResultFrom(
+        isLocal
+          ? await runWabOpen(target, persona, undefined)
+          : await remoteWabOpen(target, persona),
+      ),
   );
 
   server.registerTool(
@@ -98,9 +115,16 @@ export function registerWabTools(server: McpServer): void {
       inputSchema: z.object({ persona: personaField }),
     },
     async ({ persona }) => {
-      const result = await runWabScreenshot(persona, undefined);
+      const result = isLocal
+        ? await runWabScreenshot(persona, undefined)
+        : await remoteWabControl("screenshot", persona);
       if (!result.ok) {
+        // The friendly "update wonda" hint only applies in local mode: it keys
+        // off a child-process exit code (status 1). In remote mode result.status
+        // is an HTTP code, so surface the route's error text as-is (it is already
+        // actionable via the route's message field).
         const binaryTooOld =
+          isLocal &&
           result.status === 1 &&
           /unknown command "screenshot" for "wonda wab"/.test(result.error);
         return {
@@ -156,7 +180,11 @@ export function registerWabTools(server: McpServer): void {
       }),
     },
     async ({ platform, persona }) =>
-      toolResultFrom(await runWabLoginOpen(platform, persona, undefined)),
+      toolResultFrom(
+        isLocal
+          ? await runWabLoginOpen(platform, persona, undefined)
+          : await remoteWabLoginOpen(platform, persona),
+      ),
   );
 
   server.registerTool(
@@ -172,8 +200,109 @@ export function registerWabTools(server: McpServer): void {
       }),
     },
     async ({ platform, persona }) =>
-      toolResultFrom(await runWabLoginCheck(platform, persona, undefined)),
+      toolResultFrom(
+        isLocal
+          ? await runWabLoginCheck(platform, persona, undefined)
+          : await remoteWabControl("check", persona, { platform }),
+      ),
   );
+}
+
+// ── Remote (cloud connector) execution: forward the command to the user's relay ──
+
+// POST /twin/sessions/{persona}/wab/{command}. The route returns { result,
+// actionRunId }; unwrap `result` so remote and local return the same wab payload.
+async function remoteWabControl(
+  command: string,
+  persona: string | undefined,
+  body: Record<string, unknown> = {},
+): Promise<ApiResult<unknown>> {
+  const resolved = requireRemotePersona(persona);
+  if (!resolved.ok) return resolved;
+  const result = await apiPost<{ result?: unknown }>(
+    `/twin/sessions/${encodeURIComponent(resolved.persona)}/wab/${command}`,
+    body,
+  );
+  if (!result.ok) return result;
+  return { ...result, data: result.data?.result ?? {} };
+}
+
+// POST /twin/wab/status. Account-level: no persona (matches local `wab status`,
+// which lists every persona on the machine via any live relay), so it never goes
+// through requireRemotePersona. Persona stays optional/ignored on this tool.
+async function remoteWabStatus(): Promise<ApiResult<unknown>> {
+  const result = await apiPost<{ result?: unknown }>("/twin/wab/status", {});
+  if (!result.ok) return result;
+  return { ...result, data: result.data?.result ?? {} };
+}
+
+// show/hide/open echo a small descriptor (matching the local-exec shape) so the
+// agent knows the window title without a follow-up call.
+async function remoteWabVisibility(
+  action: "show" | "hide",
+  persona: string | undefined,
+): Promise<ApiResult<unknown>> {
+  const result = await remoteWabControl(action, persona);
+  if (!result.ok) return result;
+  return {
+    ...result,
+    data: {
+      persona,
+      visible: action === "show",
+      windowTitle: persona ? `Wonda · ${persona}` : undefined,
+    },
+  };
+}
+
+async function remoteWabOpen(
+  target: string,
+  persona: string | undefined,
+): Promise<ApiResult<unknown>> {
+  const result = await remoteWabControl("open", persona, { target });
+  if (!result.ok) return result;
+  return {
+    ...result,
+    data: {
+      persona,
+      opened: target,
+      windowTitle: persona ? `Wonda · ${persona}` : undefined,
+    },
+  };
+}
+
+// Mirrors local-exec's runWabLoginOpen: surface the window, then navigate it to
+// the platform's login page so the user signs in themselves.
+async function remoteWabLoginOpen(
+  platform: string,
+  persona: string | undefined,
+): Promise<ApiResult<unknown>> {
+  const loginUrl = PLATFORM_LOGIN_URLS[platform];
+  if (loginUrl === undefined) {
+    return {
+      ok: false,
+      error: `Unknown platform ${platform} (supported: ${Object.keys(PLATFORM_LOGIN_URLS).join(", ")})`,
+      status: 400,
+    };
+  }
+  const shown = await remoteWabVisibility("show", persona);
+  if (!shown.ok) return shown;
+  return remoteWabOpen(loginUrl, persona);
+}
+
+function requireRemotePersona(
+  persona: string | undefined,
+):
+  | { ok: true; persona: string }
+  | { ok: false; error: string; status: number } {
+  if (persona !== undefined && persona.trim() !== "") {
+    return { ok: true, persona };
+  }
+  return {
+    ok: false,
+    error:
+      "persona is required on the remote connector: pass the account/identity to act as",
+    status: 400,
+  };
 }
 
 function toolResultFrom(result: ApiResult<unknown>) {

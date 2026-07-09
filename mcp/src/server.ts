@@ -28,7 +28,18 @@ const LOCAL_INSTRUCTIONS = `Wonda connects you to the user's real social account
 
 Generation, media, jobs and publish tools call the Wonda API over HTTPS using WONDA_API_KEY and consume account credits.`;
 
-const REMOTE_INSTRUCTIONS = `Wonda connects you to the user's real social accounts (LinkedIn, X, Reddit, Instagram) plus AI media generation. This server runs in REMOTE mode: platform tools (linkedin_*, x_*, reddit_*, instagram_*) execute server-side on the account's cloud twin, a hosted browser session behind dedicated mobile/residential IPs that can run 24/7, or on the user's own paired machine when their local relay is online (engine policy auto | my_machine | cloud). "persona" is required for platform tools. Twin provisioning, schedules and campaigns are managed with the twin_* and campaign tools. Generation, media, jobs and publish tools call the Wonda API and consume account credits.`;
+const REMOTE_INSTRUCTIONS = `Wonda connects you to the user's real social accounts (LinkedIn, X, Reddit, Instagram) plus AI media generation. This is the REMOTE connector: platform tools (linkedin_*, x_*, reddit_*, instagram_*) go through the Wonda backend, which routes each action to the best engine for the user. You do not choose the engine; the backend picks it (policy auto | my_machine | cloud). "persona" identifies the account/identity and is required for platform tools.
+
+- If the user's Wonda Mac app is running (their local relay is online), the action runs on THEIR machine, in the Wonda Automation Browser (WAB): a real, hardened Chrome window holding the account's logged-in session, on the user's own IP with cookies kept on their device. It launches on demand and runs offscreen by default. This is NOT the cloud twin: the browser is on the user's Mac and the user can watch it.
+- Otherwise the same action runs on the account's cloud twin: a hosted browser session behind dedicated mobile/residential IPs that can run 24/7.
+
+When the relay is online you can drive the user's local WAB directly, WITHOUT any computer-use or desktop-control tool:
+- wab_show / wab_hide surface or re-hide the window (titled "Wonda · <persona>") so the user can watch the live session.
+- wab_open navigates it to a platform or URL; wab_screenshot captures what it is currently showing (for you to see); wab_status lists the personas and whether each browser is running.
+- To connect a new account or refresh an expired session, call wab_login_open (opens the platform's login page in a visible WAB window so the USER signs in themselves, 2FA included), wait for the user to say they finished, then wab_login_check to verify. NEVER type, request, or handle credentials yourself.
+The wab_* tools act on the user's Mac and need their Wonda app online; when it is offline they return a clear "your machine is offline" error, and the cloud twin has its own login flow (twin_login_*).
+
+Twin provisioning, schedules and campaigns are managed with the twin_* and campaign tools. Generation, media, jobs and publish tools call the Wonda API and consume account credits.`;
 
 export type CreateWondaMcpServerOptions = {
   platformToolExecutor?: PlatformToolExecutor;

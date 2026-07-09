@@ -54,7 +54,7 @@ export function registerPlatformTools(
         entry.toolName,
         {
           title: formatTitle(entry.platform, entry.action),
-          description: `${entry.platform}/${entry.action} twin ${entry.kind} action. ${describeSlots(entry)}`,
+          description: `${entry.platform}/${entry.action} ${entry.kind} action. Runs on the user's own Mac in the Wonda Automation Browser when their Wonda app is online, otherwise on the account's cloud twin. ${describeSlots(entry)}`,
           annotations: annotationsForTwinActionKind(entry.kind),
           inputSchema: platformActionInputSchema,
         },
