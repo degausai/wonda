@@ -258,7 +258,17 @@ const ACTION_DEFINITIONS = [
   }),
   salesnav("facets", { optionalPositionals: ["type", "query"] }),
   salesnav("typeahead", { positionals: ["query"] }),
-  salesnav("profile", { variadicField: { name: "urns", maxCount: 50 } }),
+  salesnav("profile", {
+    // --enrich makes ~2 extra by-URN reads per lead, so the CLI caps enriched
+    // calls at 25 (salesnavEnrichCap). Reject >25 up front instead of failing at
+    // runtime; unenriched calls keep the 50-lead batch ceiling.
+    variadicField: {
+      name: "urns",
+      maxCount: 50,
+      enrichCap: { field: "enrich", maxCount: 25 },
+    },
+    flags: [["--enrich", "enrich"]],
+  }),
   salesnav("insights", { positionals: ["urn"] }),
   salesnav("warm-intro", {
     positionals: ["urn"],
@@ -603,7 +613,13 @@ function salesnav(
     subVerb?: string;
     positionals?: string[];
     optionalPositionals?: string[];
-    variadicField?: { name: string; maxCount: number };
+    // enrichCap lowers maxCount when the named boolean flag is set, matching a
+    // CLI cap that only applies to the enriched (extra-fetch) path.
+    variadicField?: {
+      name: string;
+      maxCount: number;
+      enrichCap?: { field: string; maxCount: number };
+    };
     csvFlags?: [flag: string, field: string][];
     flags?: FlagSpec[];
     pagination?: boolean;
@@ -674,9 +690,15 @@ function salesnav(
         if (values.length === 0) {
           throw new Error(`${opts.variadicField.name} is required`);
         }
-        if (values.length > opts.variadicField.maxCount) {
+        const { maxCount, enrichCap } = opts.variadicField;
+        const enrichActive =
+          enrichCap !== undefined && checkIsFlagActive(parsed[enrichCap.field]);
+        const cap = enrichActive ? enrichCap.maxCount : maxCount;
+        if (values.length > cap) {
           throw new Error(
-            `${opts.variadicField.name} must have at most ${opts.variadicField.maxCount} items`,
+            `${opts.variadicField.name} must have at most ${cap} items${
+              enrichActive ? ` when ${enrichCap.field} is set` : ""
+            }`,
           );
         }
         argv.push(...values);
@@ -973,12 +995,18 @@ function pushFlags(argv: string[], flags: FlagSpec[], payload: Payload): void {
 }
 
 function pushFlag(argv: string[], flag: string, value: unknown): void {
-  if (value === undefined || value === null || value === false) return;
+  if (!checkIsFlagActive(value)) return;
   if (value === true) {
     argv.push(flag);
     return;
   }
   argv.push(flag, stringValue(value));
+}
+
+// A boolean-style flag is active whenever pushFlag would emit it: any value that
+// is not undefined/null/false. Used to gate the enrich-only URN cap.
+function checkIsFlagActive(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== false;
 }
 
 function pushCsvFlag(argv: string[], flag: string, value: unknown): void {

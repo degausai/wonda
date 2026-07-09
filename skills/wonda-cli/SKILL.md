@@ -1456,6 +1456,7 @@ wonda linkedin salesnav search "VP marketing" --seniority 210 --region 100506914
 wonda linkedin salesnav search --school 235785 --past-company 1009 --past-title 3 --years-of-experience 4  # Background facets: school/university, past employer, past job title, years-of-experience buckets (1 <1y, 2 1-2y, 3 3-5y, 4 6-10y, 5 10+y); --title filters current job title
 wonda linkedin salesnav facets SCHOOL "HEC Paris"    # Resolve a facet value name to the id the search flags take (no args lists the filter types; YEARS_OF_EXPERIENCE has no typeahead, pass the bucket ids directly)
 wonda linkedin salesnav --help                       # More seat-gated reads: saved-searches, lists, profile, typeahead, recommended leads|companies, alerts, recent, personas, notifications, warm-intro, insights
+wonda linkedin salesnav profile "urn:li:fs_salesProfile:(ACwAA...,NAME_SEARCH,eQ3R)"  # Resolve one or more SN leads by fs_salesProfile urn (name + picture); add --enrich for each lead's education (school/degree/field/years), full experience history, and years-of-experience (opt-in; ~2 extra Voyager reads per lead, capped at 25)
 
 # WAB lifecycle (see `wonda wab --help` for the full surface: start/stop/status/install/bind/sync-cookies/logs)
 wonda linkedin enrich-engagers --activity-id <id>    # Scrape engagers + enrich each with profile + current employer (joined JSON; --company-detail=false skips company page lookups)
