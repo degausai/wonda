@@ -1950,3 +1950,4 @@ wonda alignment extract-timestamps --model <model> --attach <mediaId> --wait
 - **Bad params**: `wonda models info <slug>` for valid params
 - **Timeout**: `wonda jobs wait inference <id> --timeout 20m`
 - **Insufficient credits (402)**: `wonda topup` to add credits
+  LinkedIn WAB attachments: use `linkedin send-message <target> [text] --attach <local-path>` with one supported local file (bmp/gif/jpeg/jpg/png/doc/docx/pdf/mp4/m4a, max 20,000,000 bytes). Add `--dry-run` to stage the upload without sending. Local paths are rejected by cloud mode.

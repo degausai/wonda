@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { apiPost } from "../api.js";
 import { getCliVersionPolicy } from "../version-policy.js";
 import {
   buildUpdateInstruction,
@@ -11,21 +12,51 @@ import {
 } from "../version.js";
 import { READ_TOOL_ANNOTATIONS } from "./annotations.js";
 
+export type RelayStatusResponse = {
+  personas: {
+    persona: string;
+    connected: boolean;
+    connectionState: "connected" | "disconnected";
+    version: string | null;
+    pairedAt: string | null;
+    expiresAt: string | null;
+    ttlMs: number;
+  }[];
+};
+
+// The connected relays' presence, for remote mode (the MCP host has no local
+// binary; the meaningful "installed Wonda" is the relay on the user's Mac,
+// which self-reports its version on every poll). Returns null when the status
+// lookup itself failed — indistinguishable from offline for the caller's
+// purposes, but kept separate so a transient API error isn't reported as
+// "no Mac connected".
+export async function fetchLiveRelays(): Promise<
+  RelayStatusResponse["personas"] | null
+> {
+  const status = await apiPost<RelayStatusResponse>("/relay/status", {});
+  if (!status.ok) return null;
+  return status.data.personas.filter((persona) => persona.connected);
+}
+
 export function registerStatusTools(server: McpServer): void {
   server.registerTool(
     "wonda_status",
     {
       title: "Wonda Status",
       description:
-        "Check whether the installed Wonda binary is up to date. Returns the installed version, the latest and minimum supported releases, the install channel, and update instructions.",
+        "Check the user's Wonda installation. Locally this reports the installed binary; remotely it reports the Wonda Mac app (relay) connected for this account — its version, the personas it serves, and whether an update is available. localRelay.connected=false means the user's Mac app is not running.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({}),
     },
     async () => {
       const isLocal = checkIsLocalMode();
+      const liveRelays = isLocal ? null : await fetchLiveRelays();
+      const relayVersion =
+        liveRelays?.find((relay) => relay.version !== null)?.version ?? null;
+      // In remote mode the binary that matters is the relay on the user's Mac.
       const binaryVersion = isLocal
         ? ((await captureBinaryVersion()) ?? null)
-        : null;
+        : relayVersion;
       const policy = await getCliVersionPolicy();
       const latest = policy?.latest ?? null;
       const minSupported = policy?.minSupported ?? null;
@@ -50,6 +81,14 @@ export function registerStatusTools(server: McpServer): void {
               updateAvailable,
               updateInstructions,
               channel,
+              ...(isLocal
+                ? {}
+                : {
+                    localRelay: {
+                      connected: (liveRelays?.length ?? 0) > 0,
+                      personas: liveRelays ?? [],
+                    },
+                  }),
             }),
           },
         ],

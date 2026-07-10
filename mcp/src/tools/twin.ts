@@ -6,6 +6,7 @@ import {
   READ_TOOL_ANNOTATIONS,
   WRITE_TOOL_ANNOTATIONS,
 } from "./annotations.js";
+import { fetchLiveRelays } from "./status.js";
 
 const platformSchema = z.enum(["x", "reddit", "linkedin", "instagram"]);
 const provenanceSchema = z.enum(["born_in_cloud", "synced_local"]);
@@ -95,11 +96,38 @@ export function registerTwinTools(server: McpServer): void {
     "list_twins",
     {
       title: "List Twins",
-      description: "List cloud twins for the current account.",
+      description:
+        "List cloud twins for the current account, plus the personas served by the user's Wonda Mac app (local relay). Local personas run via the wab_* tools on the user's own machine and need no cloud twin or premium plan.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({}),
     },
-    async () => toolResult(await apiGet("/twin/sessions")),
+    async () => {
+      const [twins, liveRelays] = await Promise.all([
+        apiGet("/twin/sessions"),
+        fetchLiveRelays(),
+      ]);
+      const localRelay = {
+        connected: (liveRelays?.length ?? 0) > 0,
+        personas: liveRelays ?? [],
+      };
+      // A cloud-twin failure (e.g. the premium gate) must not hide the user's
+      // Mac: local personas are a separate, ungated surface.
+      if (!twins.ok) {
+        return toolResult({
+          ok: true,
+          data: {
+            cloudTwins: null,
+            cloudTwinsError: twins.error,
+            localRelay,
+          },
+        });
+      }
+      const data =
+        twins.data !== null && typeof twins.data === "object"
+          ? { ...twins.data, localRelay }
+          : { cloudTwins: twins.data, localRelay };
+      return toolResult({ ...twins, data });
+    },
   );
 
   server.registerTool(
