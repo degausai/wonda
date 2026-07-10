@@ -1433,8 +1433,11 @@ wonda linkedin enrich johndoe janedoe                # Batch profile enrichment 
 wonda linkedin enrich johndoe janedoe --via public   # Paid public enrichment task, default waits for completion
 wonda linkedin enrich johndoe --via public --no-wait # Create task only, then poll GET /scrape/linkedin-profiles/{taskId}
 wonda linkedin company google                        # View company page
+wonda linkedin resolve <fsd-profile-id>...            # Resolve ACoAA member ids to public vanities (cookie-only, cached per account)
 wonda linkedin conversations                         # List message threads
+wonda linkedin conversations --resolve               # Fill missing participant/sender vanityName fields
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
+wonda linkedin messages <conversation-urn> --resolve # Fill missing sender vanityName fields
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your own connections (recently-added order, each with connectedAt)
 wonda linkedin connections johndoe                   # A member's connections visible to you (connectionOf search; relevance order, no dates; --degree 1|2|3 filters by your distance; --all enumerates)
@@ -1498,6 +1501,8 @@ wonda linkedin signup --persona <name> --resume code --email <addr>             
 Paginated commands support: `-n <count>`, `--start`, `--all`, `--max-pages`, `--delay <ms>`.
 
 `wonda linkedin profile` includes additive `emails`, `websites`, `phone`, and `twitter` fields when the member exposes them in LinkedIn's Contact info. The contact-info read uses the same logged-in Voyager cookie and CSRF path as profile reads, is best-effort when hidden or rate-limited, and is equivalent to manually opening the Contact info overlay. It does not infer, enrich, persist, or batch-harvest contacts.
+
+**LinkedIn member identity resolution:** `wonda linkedin resolve <id>...` accepts bare `ACoAA...` fsd profile ids plus `urn:li:fsd_profile:` and `urn:li:fs_miniProfile:` wrappers. It performs one cookie-only Voyager read per unique cache miss and stores positive results for 30 days under the selected account. `--no-cache` skips persistent cache reads and writes but still deduplicates within the invocation. Numeric `urn:li:member:<id>` values are rejected because LinkedIn's authenticated web redirect preserves the numeric id and no stable Voyager mapping endpoint is available. `conversations --resolve` and `messages --resolve` use the same cache and only fill existing blank `vanityName` fields; without `--resolve`, their output is unchanged.
 
 `wonda linkedin profile` also returns `education` (a list of `{school, degree, fieldOfStudy, startYear, endYear}`, `endYear` 0 meaning ongoing), `yearsOfExperience` (career span in years, computed from the earliest dated experience; 0 if none), and the full `experiences` work history (each `{title, companyName, companyUrn, companyUniversalName, startYear, startMonth, endYear, location}`, `endYear` 0 meaning current) plus `currentCompany` in the same shape for the present role. These read over the same logged-in Voyager cookie/CSRF path as the rest of the profile and are best-effort when hidden or rate-limited.
 
