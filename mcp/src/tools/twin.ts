@@ -264,6 +264,25 @@ export function registerTwinTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "twin_liveness",
+    {
+      title: "Twin Liveness",
+      description:
+        "Is a LIVE, interactive streamed session (login / view / signup) open for " +
+        "this twin RIGHT NOW? The fast-decaying source of truth (flips false within " +
+        "~30s of the viewer closing the tab), distinct from the sticky lifecycle " +
+        "status on twin_health and the 90-min profile lease. Returns { persona, " +
+        "live, streamKind, streamExpiresAt }.",
+      annotations: READ_TOOL_ANNOTATIONS,
+      inputSchema: personaInputSchema,
+    },
+    async ({ persona }) =>
+      toolResult(
+        await apiGet(`/twin/sessions/${encodeURIComponent(persona)}/liveness`),
+      ),
+  );
+
+  server.registerTool(
     "twin_limits",
     {
       title: "Twin Limits",
@@ -328,6 +347,26 @@ export function registerTwinTools(server: McpServer): void {
     async ({ runId }) =>
       toolResult(
         await apiGet(`/twin/runs/${encodeURIComponent(runId)}/output`),
+      ),
+  );
+
+  server.registerTool(
+    "twin_artifact",
+    {
+      title: "Get Twin Run Artifact",
+      description:
+        "Get short-TTL presigned download URLs for a FAILED run's diagnostic " +
+        "artifacts: a failure screenshot (image/png, inline-viewable) and the full " +
+        "failure-bundle tar.zst. Returns { screenshotUrl, bundleUrl } (either may " +
+        "be null). 404 if the run captured neither. Bearer account key only.",
+      annotations: READ_TOOL_ANNOTATIONS,
+      inputSchema: z.object({
+        runId: z.string().min(1),
+      }),
+    },
+    async ({ runId }) =>
+      toolResult(
+        await apiGet(`/twin/runs/${encodeURIComponent(runId)}/artifact`),
       ),
   );
 
@@ -443,6 +482,34 @@ export function registerTwinTools(server: McpServer): void {
           `/twin/sessions/${encodeURIComponent(persona)}/login-automated`,
           { platform },
         ),
+      ),
+  );
+
+  server.registerTool(
+    "twin_signup",
+    {
+      title: "Twin Signup (streamed)",
+      description:
+        "Provision a fresh cloud twin and mint a hosted, STREAMED signup session " +
+        "so a human creates the account by hand in the live remote browser (3-A " +
+        "fully-attended). Returns { wsUrl, viewerUrl, runId, expiresAt }. Give " +
+        "viewerUrl to the user to open in a browser and type the whole signup " +
+        "(including any captcha / verification); you cannot sign up for them. " +
+        "Refuses to run over an already-active / needs_auth twin (409 — use " +
+        "twin_needs_auth_view to re-authenticate an existing one), 423 if paused. " +
+        "Signup is unmetered. Token expires in ~35 min (call again for a fresh " +
+        "one); only one twin can be streamed at a time, so do them sequentially.",
+      annotations: WRITE_TOOL_ANNOTATIONS,
+      inputSchema: z.object({
+        persona: z.string().min(1),
+        platform: platformSchema.optional(),
+      }),
+    },
+    async ({ persona, platform }) =>
+      toolResult(
+        await apiPost(`/twin/login/${encodeURIComponent(persona)}/signup`, {
+          platform,
+        }),
       ),
   );
 

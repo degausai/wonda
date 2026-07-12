@@ -145,11 +145,13 @@ With a twin provisioned, remote-mode platform tools run on it. The engine policy
 
 Provisioning and lifecycle: `provision_twin`, `list_twins`, `show_twin`, `update_twin`, `pause_twin`, `resume_twin`, `run_now_twin`
 
-Safety and allowances: `twin_can_act`, `twin_action_allowance`, `twin_health`, `twin_limits`, `set_twin_limits`
+Safety and allowances: `twin_can_act`, `twin_action_allowance`, `twin_health`, `twin_liveness` (is a live streamed session open right now?), `twin_limits`, `set_twin_limits`
 
-Runs and schedules: `list_twin_runs`, `get_twin_output`, `cancel_twin_run`, `list_twin_schedules`, `create_twin_schedule`, `update_twin_schedule`, `delete_twin_schedule`
+Runs and schedules: `list_twin_runs`, `get_twin_output`, `twin_artifact` (signed screenshot/bundle URLs for a failed run), `cancel_twin_run`, `list_twin_schedules`, `create_twin_schedule`, `update_twin_schedule`, `delete_twin_schedule`
 
-Auth and seeding: `twin_seed_from_cookies` (seed a twin profile from stored cookies), `twin_login_automated` (automated onboarding; returns a human-gated `viewerUrl` when needed), `twin_login_status`, `twin_needs_auth_view` (mint a hosted login view URL)
+Auth and seeding: `twin_seed_from_cookies` (seed a twin profile from stored cookies), `twin_login_automated` (automated onboarding; returns a human-gated `viewerUrl` when needed), `twin_signup` (mint a streamed born-in-cloud signup viewer for a fresh persona), `twin_login_status`, `twin_needs_auth_view` (mint a hosted login view URL)
+
+`twin_needs_auth_view` (re-login) and `twin_signup` (fresh account) are the watchable, interactive surfaces: each streams a live cloud browser to a `viewerUrl` a human opens and drives, and a captcha or account creation needs one of these. `run_now_twin`, schedules, `twin_login_status`, and `twin_seed_from_cookies` are headless (unattended, no viewer, so a captcha there just fails the run). There is no `twin control` tool.
 
 Autopilot: `run_campaign` (one bounded autonomous campaign, approved once) and `schedule_loop` (recurring autonomous loop on a cron, same server-side caps).
 
