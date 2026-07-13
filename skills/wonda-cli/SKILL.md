@@ -265,6 +265,8 @@ wonda wab config set <persona> <key> <value>  # persist per-persona spawn defaul
 wonda wab config get <persona>                # print a persona's persisted config
 ```
 
+**Keep cron personas warm.** A persona that continuously backs cookie-only read crons can use `wonda wab config set <persona> idle-timeout off`, followed by `wonda wab start <persona>`. The WAB then stays up and its existing 10-minute cookie sync keeps the flat files current. Use always-on only for cron-backing personas; `wonda wab config unset <persona> idle-timeout` restores the default 30-minute idle shutdown.
+
 **Local browser proxy (`proxy_url`).** By default the local WAB dials direct (your own IP). Set `wonda wab config set <persona> proxy_url managed` to route the LOCAL browser through your account's minted twin proxy, so it shares the same egress as the cloud twin (useful for IP continuity or a VPN/office/CGNAT network). A literal `socks5://…`/`https://…` value is a manual override instead; unset clears it back to direct. The proxy is optional: if minting is disabled for the environment or unavailable, the browser falls back to a direct dial.
 
 Lifecycle commands take an `--account` (e.g. `wonda wab login <account> linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
@@ -313,7 +315,17 @@ Source lives at `cli/wondercat/wab/`. The driver is `launch.mjs` and per-platfor
 - `~/.wonda/reddit-cookies/<account>.json`
 - `~/.wonda/linkedin-cookies/<account>.json` (auto-migrated from the legacy single-file format)
 
-Pass `--account <name>` to `auth set` to keep multiple logins side-by-side. The binding is recorded against the account's persona in `account-bindings.json` and, if the persona's Chromium is running, the rotated cookies get pushed into the live context. The driver also syncs cookies back to disk every 10 minutes (and on graceful shutdown), so rotated cookies (ct0 cycles, token_v2 server-side refresh, etc.) flow back to the cookies path without manual re-paste.
+Each file is a session-owned local cache, not a portable credential. A platform account may have separate sessions on multiple computers and a cloud Twin. The file records the owning device/persona WAB session, and every injection, overwrite, cookie-only read, refresh, and backup restore checks that identity first. The CLI does not upload these cookies to or download them from the legacy shared hosted-token store. `--force` never bypasses a session mismatch.
+
+Pass `--account <name>` to `auth set` to keep multiple logins side-by-side on the current device. The binding is recorded against the account's persona in `account-bindings.json` and, if the matching persona's Chromium is running, the rotated cookies get pushed into that live context. Never use `auth set` to copy cookies from another device or a Twin. Native `wab login` is safer. The driver also syncs cookies back to disk every 10 minutes (and on graceful shutdown), so rotated cookies (ct0 cycles, token_v2 server-side refresh, etc.) flow back to the cookies path without manual re-paste.
+
+The cloud Twin is its own stable, always-on session. Ordinary provisioning does not seed LinkedIn from local cookie files; use `wonda twin login <persona> --platform linkedin` to log in inside the Twin. Cloud backups are recovery artifacts for their source session only. Inspect local and cloud ownership with `wonda wab cookies status [persona]`; it never prints cookie values. Direct read verbs currently reject `--engine cloud`, so run cloud reads with `wonda twin run-now <persona> --command "<platform read command>"` and retrieve them with `wonda twin output`. This executes inside the Twin and never downloads its cookies locally.
+
+**Safely refresh LinkedIn's flat cookie file.** Run `wonda linkedin auth refresh --account <account> --persona <persona>` before a cookie-only read batch. Fresh disk cookies are a fast local no-op. Stale or near-expiry cookies cause one WAB start (a no-op when already running), one WAB-to-disk sync, and a local/WAB-side LinkedIn session check. The refresh path never invokes the raw `wonda linkedin auth check` probe and never retries credentials. If the WAB session is dead, it exits nonzero with `native re-login required`; stop the batch and recover manually with `wonda wab login <persona> linkedin`.
+
+`wonda linkedin auth refresh --json` returns `{fresh, refreshed, ageSeconds, expiresAt, sessionAlive}`. `fresh` describes the final disk state; `refreshed` is true only when WAB-to-disk sync ran; `ageSeconds` is the disk cookie age; `expiresAt` is the known expiry or null; and `sessionAlive` is the local/WAB-side login result. `sessionAlive` is null on a fresh local no-op because no WAB check was needed. `--fresh-within` changes both the maximum accepted disk age and the minimum remaining recorded `li_at` lifetime (15 minutes by default). Treat a nonzero exit as authoritative even with JSON output.
+
+Cookie-backed LinkedIn reads accept opt-in `--freshen` alongside `--via cookies`. It runs the same local preflight only when the disk cookies are stale, then attempts the requested read once. The default remains unchanged: without `--freshen`, `--via cookies` stays fast and browser-free.
 
 ### Action rate limits
 
@@ -1422,6 +1434,7 @@ wonda linkedin auth set --account brand-A --li-at-value <...> --jsessionid-value
 wonda linkedin auth check                                              # raw probe, see warning above
 wonda linkedin auth check --account <name> --via wab               # safe: routes via account's WAB session
 wonda linkedin auth status --account <name>                        # local-only: cookie provenance (login vs paste) + 429-risk, never probes
+wonda linkedin auth refresh --account <name> --persona <persona>   # local freshness preflight; stale WAB → disk sync, never raw-probes
 
 # Read
 wonda linkedin me                                    # Your identity
