@@ -25,6 +25,10 @@ export type PayloadFieldSpec = {
   kind: "string" | "value" | "stringArray";
   enum?: string[];
   maxCount?: number;
+  /** Agent-facing hint (rendered as the field's schema `.describe()`) so a
+   * remote tool caller knows what to send instead of getting a bare
+   * validation error. */
+  description?: string;
 };
 
 type Payload = Record<string, unknown>;
@@ -44,12 +48,20 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
     { name: "targets", required: true, kind: "stringArray" },
   ],
   "linkedin/activity": [
-    { name: "target", required: true, kind: "string" },
+    {
+      name: "target",
+      required: true,
+      kind: "string",
+      description:
+        'The LinkedIn member whose recent activity to fetch: a profile URL, vanity handle (e.g. "williamhgates"), or member URN.',
+    },
     {
       name: "type",
       required: false,
       kind: "string",
       enum: ["all", "comments", "reactions"],
+      description:
+        'Which activity to return: "all" (default), "comments", or "reactions".',
     },
     { name: "count", required: false, kind: "value" },
   ],

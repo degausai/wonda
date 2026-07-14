@@ -49,31 +49,47 @@ export function registerPlatformTools(
     // localOnly actions have no server-registry counterpart; registering them
     // in remote mode would just produce 4xx tool errors.
     if (entry.localOnly === true && !isLocal) continue;
-    const localSpec = isLocal ? LOCAL_ACTIONS[entry.key] : undefined;
-    if (localSpec === undefined) {
-      server.registerTool(
-        entry.toolName,
-        {
-          title: formatTitle(entry.platform, entry.action),
-          description: `${entry.platform}/${entry.action} ${entry.kind} action. Runs on the user's own Mac in the Wonda Automation Browser when their Wonda app is online, otherwise on the account's cloud twin. ${describeSlots(entry)}`,
-          annotations: annotationsForTwinActionKind(entry.kind),
-          inputSchema: platformActionInputSchema,
-        },
-        async (args) => toolResult(await execute(entry, args)),
-      );
-      continue;
-    }
+    // The payload contract (which fields, which are required) is identical
+    // whether the action runs locally or on the cloud twin, so surface it in
+    // BOTH modes: a remote caller (e.g. Cowork) otherwise sees only an opaque
+    // `payload` record and hits a bare "Required" when a field like
+    // linkedin/activity's `target` is missing. Only the framing differs.
+    const spec = LOCAL_ACTIONS[entry.key];
     server.registerTool(
       entry.toolName,
       {
         title: formatTitle(entry.platform, entry.action),
-        description: localDescription(entry, localSpec),
+        description:
+          isLocal && spec
+            ? localDescription(entry, spec)
+            : remoteDescription(entry),
         annotations: annotationsForTwinActionKind(entry.kind),
-        inputSchema: localInputSchema(localSpec),
+        inputSchema: buildActionInputSchema(entry, isLocal),
       },
-      async (args) => toolResult(await execute(entry, args)),
+      async (args: {
+        persona?: string;
+        account?: string;
+        payload?: Record<string, unknown>;
+      }) => toolResult(await execute(entry, args)),
     );
   }
+}
+
+function remoteDescription(entry: TwinActionManifestEntry): string {
+  return `${entry.platform}/${entry.action} ${entry.kind} action. Runs on the user's own Mac in the Wonda Automation Browser when their Wonda app is online, otherwise on the account's cloud twin. ${describeSlots(entry)}`;
+}
+
+// The tool's input schema. Uses the action's known payload fields (so required
+// ones like linkedin/activity's `target` are advertised and validated up front)
+// when the registry has them, falling back to the generic payload record only
+// for actions without field metadata.
+export function buildActionInputSchema(
+  entry: TwinActionManifestEntry,
+  isLocal: boolean,
+) {
+  const spec = LOCAL_ACTIONS[entry.key];
+  if (spec === undefined) return platformActionInputSchema;
+  return actionInputSchema(spec, isLocal);
 }
 
 function localDescription(
@@ -88,7 +104,7 @@ function localDescription(
   return entry.kind === "write" ? `${base} ${describeSlots(entry)}` : base;
 }
 
-function localInputSchema(spec: LocalActionSpec) {
+function actionInputSchema(spec: LocalActionSpec, isLocal: boolean) {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const field of spec.payloadFields) {
     shape[field.name] = zodForPayloadField(field);
@@ -97,13 +113,17 @@ function localInputSchema(spec: LocalActionSpec) {
   const payload = z
     .object(shape)
     .passthrough()
-    .describe(payloadDescription(spec));
+    .describe(payloadDescription(spec, isLocal));
   return z.object({
     persona: z
       .string()
       .min(1)
       .optional()
-      .describe("Local WAB persona (defaults to the account name)"),
+      .describe(
+        isLocal
+          ? "Local WAB persona (defaults to the account name)"
+          : "Persona identifying the account/identity; runs on the local WAB when the Wonda app is online, else the cloud twin",
+      ),
     account: z
       .string()
       .min(1)
@@ -127,11 +147,16 @@ function zodForPayloadField(field: PayloadFieldSpec): z.ZodTypeAny {
   } else {
     schema = z.union([z.string(), z.number(), z.boolean()]);
   }
+  if (field.description !== undefined) {
+    schema = schema.describe(field.description);
+  }
   return field.required ? schema : schema.optional();
 }
 
-function payloadDescription(spec: LocalActionSpec): string {
-  const base = "Action payload, validated locally before the CLI runs.";
+function payloadDescription(spec: LocalActionSpec, isLocal: boolean): string {
+  const base = isLocal
+    ? "Action payload, validated locally before the CLI runs."
+    : "Action payload, validated against the action's schema.";
   if (!spec.supportsPagination) return base;
   return `${base} Also accepts count, cursor, after, sort, time, all, maxPages, delayMs.`;
 }

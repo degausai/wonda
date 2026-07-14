@@ -29,6 +29,11 @@ export type WhoamiResponse = {
     servesAllPersonas: boolean;
   } | null;
   connectedPersonas: string[];
+  /** The active Mac's real on-disk WAB personas (1.50+ relays), each with the
+   * platforms it is logged into. The authoritative list of local identities +
+   * their connected platforms; connectedPersonas is the routing-advisory list.
+   * Empty for older relays / no active device. */
+  localPersonas: { persona: string; platforms: string[] }[];
 };
 
 export async function fetchWhoami(): Promise<WhoamiResponse | null> {
@@ -43,7 +48,7 @@ export function registerWhoamiTools(server: McpServer): void {
     {
       title: "Wonda Whoami",
       description:
-        "Report which Wonda account this session is acting as (email, plan) and where its platform actions run: the twin engine policy, the active paired device with its online state, and the personas currently connected. Call this when an action unexpectedly reports the user's machine offline, when results look like they belong to a different account, or to confirm identity before write actions. mode says whether this MCP server runs locally on the user's machine or as the remote connector; in remote mode the account is the one that approved the connector's OAuth consent, which is not necessarily the account the user is signed into on the web.",
+        "Report which Wonda account this session is acting as (email, plan) and where its platform actions run: the twin engine policy, the active paired device with its online state, the personas currently connected, and localPersonas: the Mac's real local WAB personas each with the platforms it is logged into (use this to see which local identities exist and what each is signed into). Call this when an action unexpectedly reports the user's machine offline, when results look like they belong to a different account, to confirm identity before write actions, or to check which local personas + platforms are available. mode says whether this MCP server runs locally on the user's machine or as the remote connector; in remote mode the account is the one that approved the connector's OAuth consent, which is not necessarily the account the user is signed into on the web.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({}),
     },
