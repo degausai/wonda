@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiPost } from "../api.js";
+import { splitTwinNotices } from "../notices.js";
 import { WRITE_TOOL_ANNOTATIONS } from "./annotations.js";
 
 const MAX_DURATION_MS = 180_000;
@@ -305,7 +306,16 @@ function toolResult(result: { ok: boolean; data?: unknown; error?: string }) {
       isError: true,
     };
   }
+  // run_campaign rides the same twin action API as the platform tools, so
+  // server-attached notices strip from the payload and render as plain lines
+  // here too (see mcp/src/notices.ts).
+  const { data, noticeLines } = splitTwinNotices(result.data);
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(result.data) }],
+    content: [
+      {
+        type: "text" as const,
+        text: [JSON.stringify(data), ...noticeLines].join("\n\n"),
+      },
+    ],
   };
 }

@@ -11,6 +11,7 @@ import { registerPublishTools } from "./tools/publish.js";
 import { registerStatusTools } from "./tools/status.js";
 import { registerTwinTools } from "./tools/twin.js";
 import { registerWabTools } from "./tools/wab.js";
+import { registerWhoamiTools } from "./tools/whoami.js";
 import { checkIsLocalMode, PKG_VERSION } from "./version.js";
 
 export const WONDA_MCP_SERVER_INFO = {
@@ -65,6 +66,7 @@ export function createWondaMcpServer(
   registerPlatformTools(server, options.platformToolExecutor);
   registerCampaignTools(server);
   registerStatusTools(server);
+  registerWhoamiTools(server);
   registerWabTools(server);
   registerResources(server);
 

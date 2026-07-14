@@ -157,20 +157,21 @@ Autopilot: `run_campaign` (one bounded autonomous campaign, approved once) and `
 
 ## Other tools
 
-| Tool                                                                     | Description                                      |
-| ------------------------------------------------------------------------ | ------------------------------------------------ |
-| `generate_image` / `generate_video` / `generate_text` / `generate_music` | Generate media from a prompt                     |
-| `speech` / `transcribe` / `dialogue`                                     | TTS, STT, multi-speaker dialogue                 |
-| `analyze_video`                                                          | Extract frame grid + transcript from video       |
-| `upload_media` / `get_media` / `list_media`                              | Media library                                    |
-| `get_inference_job` / `get_editor_job` / `get_publish_job`               | Poll job status                                  |
-| `publish_instagram` / `publish_tiktok`                                   | Publish media to connected accounts              |
-| `wonda_status`                                                           | Installed binary version vs latest/min supported |
-| `wab_status` (local mode only)                                           | Running WAB personas with PID and socket path    |
-| `wab_show` / `wab_hide` (local mode only)                                | Surface the WAB window on screen / send it back  |
-| `wab_open` (local mode only)                                             | Navigate the WAB to a platform or URL            |
-| `wab_login_open` / `wab_login_check` (local mode only)                   | Open a platform login in the WAB / verify it     |
-| `wab_screenshot` (local mode only)                                       | Capture the WAB's current page as a PNG          |
+| Tool                                                                     | Description                                        |
+| ------------------------------------------------------------------------ | -------------------------------------------------- |
+| `generate_image` / `generate_video` / `generate_text` / `generate_music` | Generate media from a prompt                       |
+| `speech` / `transcribe` / `dialogue`                                     | TTS, STT, multi-speaker dialogue                   |
+| `analyze_video`                                                          | Extract frame grid + transcript from video         |
+| `upload_media` / `get_media` / `list_media`                              | Media library                                      |
+| `get_inference_job` / `get_editor_job` / `get_publish_job`               | Poll job status                                    |
+| `publish_instagram` / `publish_tiktok`                                   | Publish media to connected accounts                |
+| `wonda_status`                                                           | Installed binary version vs latest/min supported   |
+| `wonda_whoami`                                                           | Acting Wonda account, engine policy, active device |
+| `wab_status` (local mode only)                                           | Running WAB personas with PID and socket path      |
+| `wab_show` / `wab_hide` (local mode only)                                | Surface the WAB window on screen / send it back    |
+| `wab_open` (local mode only)                                             | Navigate the WAB to a platform or URL              |
+| `wab_login_open` / `wab_login_check` (local mode only)                   | Open a platform login in the WAB / verify it       |
+| `wab_screenshot` (local mode only)                                       | Capture the WAB's current page as a PNG            |
 
 Media editing (trim, captions, overlays, ...) is a `wonda edit ...` CLI task, not an MCP tool.
 

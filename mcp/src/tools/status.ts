@@ -11,6 +11,7 @@ import {
   detectInstallChannel,
 } from "../version.js";
 import { READ_TOOL_ANNOTATIONS } from "./annotations.js";
+import { fetchWhoami } from "./whoami.js";
 
 export type RelayStatusResponse = {
   personas: {
@@ -44,13 +45,19 @@ export function registerStatusTools(server: McpServer): void {
     {
       title: "Wonda Status",
       description:
-        "Check the user's Wonda installation. Locally this reports the installed binary; remotely it reports the Wonda Mac app (relay) connected for this account — its version, the personas it serves, and whether an update is available. localRelay.connected=false means the user's Mac app is not running.",
+        "Check the user's Wonda installation. Locally this reports the installed binary; remotely it reports the Wonda Mac app (relay) connected for this account — its version, the personas it serves, and whether an update is available. localRelay.connected=false means the user's Mac app is not running. account.email is the Wonda account this session acts as; use wonda_whoami for the full identity picture.",
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({}),
     },
     async () => {
       const isLocal = checkIsLocalMode();
-      const liveRelays = isLocal ? null : await fetchLiveRelays();
+      // Identity rides along so every status check self-identifies (a
+      // connector bound to an unexpected account is otherwise invisible); a
+      // failed identity lookup must never break status, hence null.
+      const [liveRelays, identity] = await Promise.all([
+        isLocal ? Promise.resolve(null) : fetchLiveRelays(),
+        fetchWhoami(),
+      ]);
       const relayVersion =
         liveRelays?.find((relay) => relay.version !== null)?.version ?? null;
       // In remote mode the binary that matters is the relay on the user's Mac.
@@ -81,6 +88,7 @@ export function registerStatusTools(server: McpServer): void {
               updateAvailable,
               updateInstructions,
               channel,
+              account: identity ? { email: identity.email } : null,
               ...(isLocal
                 ? {}
                 : {

@@ -9,6 +9,7 @@ import type { TwinActionManifestEntry } from "./twin-action-manifest.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiPost } from "../api.js";
 import { LOCAL_ACTIONS } from "../local-action-registry.js";
+import { splitTwinNotices } from "../notices.js";
 import { checkIsLocalMode } from "../version.js";
 import { annotationsForTwinActionKind } from "./annotations.js";
 import { TWIN_ACTION_MANIFEST } from "./twin-action-manifest.js";
@@ -167,8 +168,12 @@ function toolResult(result: ApiResult<unknown>) {
       isError: true,
     };
   }
-  const text = [result.warning, JSON.stringify(result.data), result.notice]
+  // Server-attached notices render as plain lines after the payload (and are
+  // stripped from the JSON so they read as hints, not action data).
+  const { data, noticeLines } = splitTwinNotices(result.data);
+  const text = [result.warning, JSON.stringify(data), result.notice]
     .filter((part): part is string => part !== undefined)
+    .concat(noticeLines)
     .join("\n\n");
   return {
     content: [{ type: "text" as const, text }],
