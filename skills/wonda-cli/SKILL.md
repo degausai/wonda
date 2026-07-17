@@ -1743,6 +1743,22 @@ wonda twin login-status <persona> --platform x           # Read-only advisory si
 wonda twin sync-profile <persona> --cookies-only         # Promote local WAB / local cookie jars to the cloud twin profile. Forces local WAB cookie sync first when that persona is running. Use --platform <x|linkedin|reddit|instagram> to limit scope, --dry-run to inspect, --include-storage to upload Chromium storage too.
 wonda twin export-cookies <persona> --platform linkedin  # Import sanitized .seeded-cookies from the current cloud twin generation into local ~/.wonda/<platform>-cookies/<account>.json. Refuses newer local jars unless --force; --dry-run shows planned writes; --account-label overrides the local label; --inject-running explicitly pushes imported cookies into already-running bound WAB personas.
 
+# Sharing (owner-only: a grantee can never re-share a twin granted to them)
+wonda twin share add <persona> --email <email>           # Share a CLOUD twin with another Wonda account (they must already have one; unknown email -> 404 "ask them to sign up first"). Exactly one of --email or --org. --role operator (default) | read-only. Emails them by default; --no-notify grants silently. Needs Premium (cloud twin). Sharing with yourself -> 400; an existing live grant -> 409. If the notification fails the grant STILL succeeded: the response carries emailSent:false and the CLI warns on stderr, exit 0.
+wonda twin share add <persona> --org <orgId> --role read-only   # Share with every member of an organization instead of one account. --no-notify is rejected here (an org share has nobody to email).
+wonda twin share list <persona>                          # Who this twin is shared with: share id, grantee email (or org), role, createdAt. Owner-only (a grantee gets 403). NOT Premium-gated, so a lapsed owner can still audit access.
+wonda twin share rm <share-id>                           # Revoke a share (id from `twin share list`). Owner-only; a share that is not yours -> 404 (never leaks that it exists). NOT Premium-gated, so a lapsed owner can always cut off access they granted.
+
+# Using a twin someone shared WITH you: there is no separate surface. Address it by
+# persona name through the normal twin/platform commands (`wonda twin show <persona>`,
+# `wonda twin run-now <persona>`, `linkedin ... --account <persona>`); the server
+# resolves a bare persona to your own twin first, else to a live grant.
+#   - role operator drives the twin (login, view, run-now, actions); read-only reads metadata only.
+#   - Owner-only routes stay denied even to an operator: `twin export-cookies` and rewriting the alert-webhook secret.
+#   - A grantee can NEVER drive a home:local twin (it lives on the owner's machine), only home:cloud.
+#   - If two different owners share the SAME persona name with you, the request is denied as ambiguous rather than guessed. Ask one of them to rename.
+#   - Both sides need Premium: the twin routes check YOUR cloud-twin entitlement, and cloud dispatch also checks the OWNER's (their account pays for the run).
+
 # Schedules
 wonda twin schedule list --persona <persona>             # List schedules (--persona optional)
 wonda twin schedule add <persona> --cron "0 9 * * *" --kind saved_sync --name saved-posts-scrape   # Add (--kind: saved_sync|engage|agent; --command, --prompt, --mode deterministic|agent)
