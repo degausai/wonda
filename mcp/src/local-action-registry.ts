@@ -253,7 +253,7 @@ const ACTION_DEFINITIONS = [
   ),
   salesnav("search", {
     optionalPositionals: ["keywords"],
-    csvFlags: [
+    facetFlags: [
       ["--seniority", "seniority"],
       ["--region", "region"],
       ["--industry", "industry"],
@@ -632,7 +632,7 @@ function salesnav(
       maxCount: number;
       enrichCap?: { field: string; maxCount: number };
     };
-    csvFlags?: [flag: string, field: string][];
+    facetFlags?: [flag: string, field: string][];
     flags?: FlagSpec[];
     pagination?: boolean;
   } = {},
@@ -658,7 +658,7 @@ function salesnav(
             maxCount: opts.variadicField.maxCount,
           } satisfies PayloadFieldSpec,
         ]),
-    ...(opts.csvFlags ?? []).map(
+    ...(opts.facetFlags ?? []).map(
       ([, field]): PayloadFieldSpec => ({
         name: field,
         required: false,
@@ -723,8 +723,8 @@ function salesnav(
         "--via",
         "cookies",
       );
-      for (const [flag, field] of opts.csvFlags ?? []) {
-        pushCsvFlag(argv, flag, parsed[field]);
+      for (const [flag, field] of opts.facetFlags ?? []) {
+        pushRepeatedFlag(argv, flag, parsed[field]);
       }
       pushFlags(argv, opts.flags ?? [], parsed);
       if (opts.pagination === true) pushCommonPagination(argv, parsed);
@@ -1025,6 +1025,14 @@ function pushCsvFlag(argv: string[], flag: string, value: unknown): void {
   if (value === undefined || value === null) return;
   if (!Array.isArray(value) || value.length === 0) return;
   argv.push(flag, value.map(stringValue).join(","));
+}
+
+// For StringArray CLI flags (no comma-splitting, so values may contain commas
+// like "Berlin, Germany"): one flag occurrence per value.
+function pushRepeatedFlag(argv: string[], flag: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) return;
+  for (const v of value) argv.push(flag, stringValue(v));
 }
 
 function pushMedia(
