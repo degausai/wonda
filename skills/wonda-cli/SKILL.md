@@ -1464,6 +1464,7 @@ wonda linkedin conversations                         # List message threads
 wonda linkedin conversations --resolve               # Fill missing participant/sender vanityName fields
 wonda linkedin messages <conversation-urn>           # Read messages in a thread
 wonda linkedin messages <conversation-urn> --resolve # Fill missing sender vanityName fields
+wonda linkedin conversation-state <vanity-or-url> --via wab # Read only that member's 1:1 thread summary; never lists the inbox or prints bodies
 wonda linkedin notifications -n 20                   # Recent notifications
 wonda linkedin connections                           # Your own connections (recently-added order, each with connectedAt)
 wonda linkedin connections johndoe                   # A member's connections visible to you (connectionOf search; relevance order, no dates; --degree 1|2|3 filters by your distance; --all enumerates)

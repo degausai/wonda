@@ -145,6 +145,9 @@ export const TWIN_ACTION_MANIFEST: TwinActionManifestEntry[] = [
     variableSlots: false,
     toolName: "linkedin_conversations",
   },
+  // Intentionally local-only and omitted from the manifest: conversation-state
+  // binds a recipient-scoped WAB lookup to local Voyager credentials. Exposing
+  // it as a generic cloud action requires a separate remote response contract.
   {
     key: "linkedin/delete-comment",
     platform: "linkedin",
