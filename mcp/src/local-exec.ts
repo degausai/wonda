@@ -43,6 +43,13 @@ type RunLocalVerbOptions = {
   // structured verdict and exits 1 when the session is not active; the JSON is
   // the answer, not an error.
   stdoutJsonOnError?: boolean;
+  // Keep going: on a non-zero exit, if stdout still parses as JSON, attach it
+  // as the error result's `partialResult` instead of discarding it. Unlike
+  // stdoutJsonOnError this stays a real failure (ok: false) — linkedin/enrich
+  // exits non-zero on a mid-batch rate limit but keeps every already-resolved
+  // profile in its stdout (mirrors readEnrichPartialResult in
+  // stream-actions.mjs).
+  preservePartialStdout?: boolean;
   // Injectable for tests; defaults to the cached `wonda --version` probe.
   captureVersion?: () => Promise<string | undefined>;
 };
@@ -80,7 +87,11 @@ export async function runLocalVerb(
   // fail as an unknown command, so refuse with upgrade guidance instead
   // (mirrors the relay's minVersionForAction handshake). Unknown/dev binary
   // versions never block.
-  if (spec.minCliVersion !== undefined) {
+  if (
+    spec.minCliVersion !== undefined &&
+    (spec.minCliVersionWhen === undefined ||
+      spec.minCliVersionWhen((args.payload ?? {}) as Record<string, unknown>))
+  ) {
     const capture = options.captureVersion ?? captureBinaryVersion;
     let binaryVersion = await capture();
     if (
@@ -119,7 +130,11 @@ export async function runLocalVerb(
     };
   }
 
-  return runWonda(argv, { timeoutMs: spec.timeoutMs, ...options });
+  return runWonda(argv, {
+    timeoutMs: spec.timeoutMs,
+    preservePartialStdout: spec.preservePartialStdout,
+    ...options,
+  });
 }
 
 export function runWabStatus(
@@ -368,10 +383,15 @@ async function runWonda(
       }
     }
     const message = stderrText || execResult.error.message;
+    const partialResult =
+      options.preservePartialStdout === true
+        ? tryParseJson(stdoutText)
+        : undefined;
     return {
       ok: false,
       error: warning === undefined ? message : `${warning}\n\n${message}`,
       status: exitStatus(execResult.error),
+      ...(partialResult !== undefined && { partialResult }),
     };
   }
 
@@ -495,6 +515,15 @@ function bufferToString(value: string | Buffer): string {
 function exitStatus(error: Error): number {
   if ("code" in error && typeof error.code === "number") return error.code;
   return 1;
+}
+
+function tryParseJson(text: string): unknown {
+  if (text.length === 0) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function checkIsRecord(value: unknown): value is Record<string, unknown> {

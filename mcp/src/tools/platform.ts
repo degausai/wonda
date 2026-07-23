@@ -190,8 +190,15 @@ async function remotePlatformExecutor(
 
 function toolResult(result: ApiResult<unknown>) {
   if (!result.ok) {
+    // A batch action (e.g. linkedin/enrich) can fail partway through and
+    // still have completed results worth keeping; append them rather than
+    // reporting only the failure and losing the finished work.
+    const text =
+      result.partialResult !== undefined
+        ? `${result.error}\n\n${JSON.stringify(result.partialResult)}`
+        : result.error;
     return {
-      content: [{ type: "text" as const, text: result.error }],
+      content: [{ type: "text" as const, text }],
       isError: true,
     };
   }

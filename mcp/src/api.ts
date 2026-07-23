@@ -59,7 +59,20 @@ export type ApiResult<T = unknown> =
       warning?: string;
       error?: never;
     }
-  | { ok: false; error: string; status: number; data?: never };
+  | {
+      ok: false;
+      error: string;
+      status: number;
+      data?: never;
+      /**
+       * Completed results from a batch action that failed partway through
+       * (e.g. linkedin/enrich hitting a rate limit mid-batch), when the
+       * failing layer captured one. Populated from the response body's
+       * `error.partialResult` (remote) or the local wonda exec's own stdout
+       * (local); absent otherwise.
+       */
+      partialResult?: unknown;
+    };
 
 export async function apiGet<T = unknown>(
   path: string,
@@ -195,6 +208,18 @@ function extractError(data: unknown, status: number): string {
   return fallback;
 }
 
+// Most of the error body (actionCode, detail, throttled, updateInstructions,
+// ...) collapses into the single `error` string above; partialResult gets its
+// own extraction because losing it silently drops otherwise-completed batch
+// results (e.g. linkedin/enrich hitting a rate limit mid-batch) that the API
+// route attaches at `error.partialResult` (see bridgeOutcomeResponse).
+function extractPartialResult(data: unknown): unknown {
+  if (typeof data !== "object" || data === null) return undefined;
+  const errorField = (data as Record<string, unknown>).error;
+  if (typeof errorField !== "object" || errorField === null) return undefined;
+  return (errorField as Record<string, unknown>).partialResult;
+}
+
 async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
   const text = await response.text();
   let data: T;
@@ -205,10 +230,12 @@ async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
   }
 
   if (!response.ok) {
+    const partialResult = extractPartialResult(data);
     return {
       ok: false,
       error: extractError(data, response.status),
       status: response.status,
+      ...(partialResult !== undefined && { partialResult }),
     };
   }
 

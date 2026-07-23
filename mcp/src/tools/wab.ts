@@ -38,7 +38,7 @@ export function registerWabTools(server: McpServer): void {
     {
       title: "WAB Status",
       description:
-        'List the Wonda Automation Browser (WAB) personas on the user\'s machine and whether each browser is running (PID, last activity). The WAB runs offscreen by default; call wab_show to surface it as "Wonda · <persona>".',
+        'List the Wonda Automation Browser (WAB) personas on the user\'s machine and whether each browser is running (PID, last activity). Each running persona also reports browser HEALTH (ok, browser-dead, unknown, unresponsive); browser-dead means the daemon is up but its Chromium context is gone and the persona needs a restart. The WAB runs offscreen by default; call wab_show to surface it as "Wonda · <persona>".',
       annotations: READ_TOOL_ANNOTATIONS,
       inputSchema: z.object({ persona: personaField }),
     },

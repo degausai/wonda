@@ -9,6 +9,10 @@ export type LocalActionSpec = {
   variableSlots: boolean;
   toolName: string;
   via: "cookies" | "wab";
+  // When set, buildArgv honors a payload.via of "cookies"|"wab" over the
+  // spec's default transport. Additive: specs that don't opt in are
+  // byte-identical to today's hardcoded-via behavior.
+  viaOverride?: boolean;
   payloadFields: PayloadFieldSpec[];
   supportsPagination: boolean;
   // Overrides the default 180s exec timeout for long-paced actions.
@@ -18,6 +22,14 @@ export type LocalActionSpec = {
   // guidance instead of exec'ing an unknown command. Mirrors the server
   // registry's minVersionForAction; unknown/dev versions never block.
   minCliVersion?: string;
+  // The minCliVersion floor applies only when this predicate returns true for
+  // the call's payload (absent = always).
+  minCliVersionWhen?: (payload: Record<string, unknown>) => boolean;
+  // On a non-zero exit, attach stdout as the error result's `partialResult`
+  // when it still parses as JSON, instead of discarding it. Opt-in: only
+  // linkedin/enrich's CLI contract keeps already-resolved batch items in
+  // stdout when it stops on a mid-batch rate limit.
+  preservePartialStdout?: boolean;
   buildArgv: (payload: unknown, persona: string, account?: string) => string[];
 };
 
@@ -69,6 +81,31 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
         'Which activity to return: "all" (default), "comments", or "reactions".',
     },
     { name: "count", required: false, kind: "value" },
+  ],
+  "linkedin/enrich": [
+    {
+      name: "target",
+      required: false,
+      kind: "string",
+      description:
+        "A single profile URL or vanity name to enrich. Exactly one of target or targets is required.",
+    },
+    {
+      name: "targets",
+      required: false,
+      kind: "stringArray",
+      maxCount: 10,
+      description:
+        "Enrich up to 10 profiles in one call: an array of profile URLs or vanity names. Exactly one of target or targets is required.",
+    },
+    {
+      name: "via",
+      required: false,
+      kind: "string",
+      enum: ["cookies", "wab"],
+      description:
+        "Where to run the batch: cookies (flat store, default) or wab (the persona's Wonda Automation Browser session; every profile read happens inside the logged-in browser).",
+    },
   ],
   "linkedin/enrich-engagers": [
     { name: "activityId", required: true, kind: "string" },
@@ -221,7 +258,25 @@ const ACTION_DEFINITIONS = [
   write("linkedin", "edit-comment", "comment", ["target", "text"]),
   feedEngage("linkedin", "like"),
   engageCommenters(),
-  read("linkedin", "enrich", ["target"]),
+  // 1.53.0 is the first CLI release that accepts --via wab for enrich.
+  // A full 10-target batch runs 9 inter-profile sleeps (4-12s jitter, up to
+  // 108s worst case) plus up to 3 voyager reads per profile (profile,
+  // education, per-experience company lookups), comfortably under the
+  // default 180s exec timeout already; the 600s ceiling below is kept as
+  // headroom (see enrichPositionals's cap comment), the same generous
+  // ceiling as enrich-engagers below.
+  withTimeout(
+    withPreservePartialStdout(
+      withMinCliVersion(
+        read("linkedin", "enrich", enrichPositionals, [], "cookies", true, {
+          viaOverride: true,
+        }),
+        "1.53.0",
+        (payload) => payload.via === "wab",
+      ),
+    ),
+    600_000,
+  ),
   write("linkedin", "follow", "follow", ["target"]),
   read(
     "linkedin",
@@ -569,6 +624,7 @@ function read(
   flags: FlagSpec[] = [],
   via: "cookies" | "wab" = "cookies",
   pagination = true,
+  options: { viaOverride?: boolean } = {},
 ): LocalActionSpec {
   return actionSpec({
     platform,
@@ -580,6 +636,7 @@ function read(
     flags,
     via,
     pagination,
+    viaOverride: options.viaOverride,
   });
 }
 
@@ -644,6 +701,7 @@ function actionSpec(args: {
   flags: FlagSpec[];
   media?: MediaSpec;
   via?: "cookies" | "wab";
+  viaOverride?: boolean;
   pagination?: boolean;
 }): LocalActionSpec {
   const pagination = args.pagination ?? true;
@@ -655,12 +713,17 @@ function actionSpec(args: {
     variableSlots: args.variableSlots,
     toolName: `${args.platform}_${args.action.replaceAll("-", "_")}`,
     via: args.via ?? viaForKind(args.kind),
+    viaOverride: args.viaOverride,
     payloadFields:
       FIELD_OVERRIDES[`${args.platform}/${args.action}`] ??
       derivePayloadFields(args.positionals, args.flags, args.media),
     supportsPagination: pagination,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
+      const viaValue =
+        args.viaOverride && (parsed.via === "cookies" || parsed.via === "wab")
+          ? parsed.via
+          : (args.via ?? viaForKind(args.kind));
       const argv = [
         "--json",
         args.platform,
@@ -671,7 +734,7 @@ function actionSpec(args: {
         "--persona",
         persona,
         "--via",
-        args.via ?? viaForKind(args.kind),
+        viaValue,
       ];
       if (args.kind === "write") argv.push("--no-auto-persona");
       pushFlags(argv, args.flags, parsed);
@@ -1032,11 +1095,39 @@ function viaForKind(kind: LocalActionKind): "cookies" | "wab" {
   return kind === "read" ? "cookies" : "wab";
 }
 
+// linkedin/enrich only: exactly one of target|targets must be present, and
+// targets is capped at 10, narrower than the CLI's own direct 25-profile
+// --via cookies limit (linkedinEnrichCookieLimit): the tool/API-routed path
+// is also bounded by the Go API client's 300s request-cancel deadline
+// (client.go) and other synchronous caller deadlines, none of which the
+// original 25-target cap's ~600s worst case fit inside. A 10-target batch
+// worst-cases ~170s, comfortably under all of them. Thrown errors surface as
+// a 400 before wonda ever spawns, same as the salesnav-profile cap.
+function enrichPositionals(payload: Payload): string[] {
+  const hasTarget = payload.target !== undefined && payload.target !== null;
+  const hasTargets = payload.targets !== undefined && payload.targets !== null;
+  if (hasTarget === hasTargets) {
+    throw new Error("Exactly one of target or targets is required");
+  }
+  if (hasTargets) {
+    const targets = requiredStringArrayField(payload, "targets");
+    if (targets.length === 0) {
+      throw new Error("targets must have at least 1 item");
+    }
+    if (targets.length > 10) {
+      throw new Error("targets must have at most 10 items");
+    }
+    return targets;
+  }
+  return [requiredStringField(payload, "target")];
+}
+
 function withMinCliVersion(
   spec: LocalActionSpec,
   minCliVersion: string,
+  minCliVersionWhen?: (payload: Record<string, unknown>) => boolean,
 ): LocalActionSpec {
-  return { ...spec, minCliVersion };
+  return { ...spec, minCliVersion, minCliVersionWhen };
 }
 
 function withTimeout(
@@ -1044,6 +1135,10 @@ function withTimeout(
   timeoutMs: number,
 ): LocalActionSpec {
   return { ...spec, timeoutMs };
+}
+
+function withPreservePartialStdout(spec: LocalActionSpec): LocalActionSpec {
+  return { ...spec, preservePartialStdout: true };
 }
 
 function derivePayloadFields(
@@ -1225,6 +1320,28 @@ function stringArrayField(
     throw new Error(`${field} must be an array`);
   }
   return value.map(stringValue).filter((item) => item.trim() !== "");
+}
+
+// Like stringArrayField, but REJECTS a blank entry instead of silently
+// filtering it: a filtered-out blank shifts every later item's index versus
+// the caller's original array (["alice", "", "bob"] would run "bob" as if it
+// were the caller's index 1, not 2), which matters for a batch where the
+// caller correlates results back to input position. Matches how the other
+// two registries already reject blanks in this field (packages/features'
+// z.array(targetSchema) fails the whole array; the twin-runner's
+// validateStringArray throws via stringField).
+function requiredStringArrayField(payload: Payload, field: string): string[] {
+  const value = payload[field];
+  if (!Array.isArray(value)) {
+    throw new Error(`${field} must be an array`);
+  }
+  return value.map((item, index) => {
+    const text = stringValue(item);
+    if (text.trim() === "") {
+      throw new Error(`${field}[${index}] must not be blank`);
+    }
+    return text;
+  });
 }
 
 function numberField(
