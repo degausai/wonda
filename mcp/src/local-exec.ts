@@ -16,6 +16,7 @@ import {
   compareVersions,
   detectInstallChannel,
   formatVersion,
+  refreshBinaryVersion,
 } from "./version.js";
 
 // Bracket access via an index signature: this module is also compiled inside
@@ -42,6 +43,8 @@ type RunLocalVerbOptions = {
   // structured verdict and exits 1 when the session is not active; the JSON is
   // the answer, not an error.
   stdoutJsonOnError?: boolean;
+  // Injectable for tests; defaults to the cached `wonda --version` probe.
+  captureVersion?: () => Promise<string | undefined>;
 };
 
 export type LocalVerbArgs = {
@@ -71,6 +74,36 @@ export async function runLocalVerb(
       error: `Action ${args.platform}/${args.action} is registered as ${spec.kind}, not ${args.kind}`,
       status: 400,
     };
+  }
+
+  // Per-action CLI version floor: a verb newer than the installed binary would
+  // fail as an unknown command, so refuse with upgrade guidance instead
+  // (mirrors the relay's minVersionForAction handshake). Unknown/dev binary
+  // versions never block.
+  if (spec.minCliVersion !== undefined) {
+    const capture = options.captureVersion ?? captureBinaryVersion;
+    let binaryVersion = await capture();
+    if (
+      binaryVersion !== undefined &&
+      compareVersions(binaryVersion, spec.minCliVersion) < 0
+    ) {
+      // The version is cached for the process lifetime, so a user who just
+      // upgraded the binary would stay blocked until an MCP restart; re-probe
+      // once before refusing so retry-after-upgrade actually recovers.
+      binaryVersion = await (options.captureVersion === undefined
+        ? refreshBinaryVersion()
+        : options.captureVersion());
+    }
+    if (
+      binaryVersion !== undefined &&
+      compareVersions(binaryVersion, spec.minCliVersion) < 0
+    ) {
+      return {
+        ok: false,
+        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(spec.minCliVersion)} or newer. Update the wonda CLI to use this tool.`,
+        status: 409,
+      };
+    }
   }
 
   let argv: string[];

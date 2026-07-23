@@ -13,6 +13,11 @@ export type LocalActionSpec = {
   supportsPagination: boolean;
   // Overrides the default 180s exec timeout for long-paced actions.
   timeoutMs?: number;
+  // Minimum installed CLI version that implements this verb. Local MCP updates
+  // independently of the wonda binary, so runLocalVerb refuses with upgrade
+  // guidance instead of exec'ing an unknown command. Mirrors the server
+  // registry's minVersionForAction; unknown/dev versions never block.
+  minCliVersion?: string;
   buildArgv: (payload: unknown, persona: string, account?: string) => string[];
 };
 
@@ -22,7 +27,7 @@ export type LocalActionSpec = {
 export type PayloadFieldSpec = {
   name: string;
   required: boolean;
-  kind: "string" | "value" | "stringArray";
+  kind: "string" | "value" | "boolean" | "stringArray";
   enum?: string[];
   maxCount?: number;
   /** Agent-facing hint (rendered as the field's schema `.describe()`) so a
@@ -77,6 +82,19 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
       kind: "string",
       enum: ["cookies", "public"],
     },
+  ],
+  "linkedin/salesnav-connect": [
+    { name: "urn", required: true, kind: "string" },
+    { name: "expectName", required: true, kind: "string" },
+    { name: "note", required: false, kind: "string" },
+    { name: "send", required: false, kind: "boolean" },
+  ],
+  "linkedin/salesnav-message": [
+    { name: "urn", required: true, kind: "string" },
+    { name: "text", required: true, kind: "string" },
+    { name: "expectName", required: true, kind: "string" },
+    { name: "subject", required: false, kind: "string" },
+    { name: "send", required: false, kind: "boolean" },
   ],
   "reddit/vote": [
     { name: "fullname", required: true, kind: "string" },
@@ -175,9 +193,18 @@ const ACTION_DEFINITIONS = [
     [
       ["--subject", "subject"],
       ["--message", "message"],
+      // Deliberately the deprecated spelling of --spend-credit: local MCP runs
+      // a separately installed wonda binary, and pre-rename binaries reject
+      // --spend-credit. The CLI keeps the alias, so this works on any version.
       ["--yes-consume-credit", "yesConsumeCredit"],
       ["--dry-run", "dryRun"],
     ],
+  ),
+  // Read side of the credit pool linkedin/inmail spends; no pagination.
+  // 1.53.0 is the first CLI release with the verb.
+  withMinCliVersion(
+    read("linkedin", "inmail-credits", [], [], "cookies", false),
+    "1.53.0",
   ),
   write(
     "linkedin",
@@ -302,6 +329,84 @@ const ACTION_DEFINITIONS = [
   salesnav("personas"),
   salesnav("recent"),
   salesnav("saved-searches"),
+  // Sales Navigator DOM WRITES (wab-only; no cookies write path).
+  salesnav("save-lead", {
+    positionals: ["urn"],
+    flags: [["--unsave", "unsave"]],
+    write: { slot: "save-lead" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("save-search", {
+    positionals: ["name"],
+    optionalPositionals: ["keywords"],
+    facetFlags: [
+      ["--seniority", "seniority"],
+      ["--region", "region"],
+      ["--industry", "industry"],
+      ["--company", "company"],
+      ["--function", "function"],
+      ["--connection-of", "connectionOf"],
+      ["--title", "title"],
+      ["--past-title", "pastTitle"],
+      ["--past-company", "pastCompany"],
+      ["--school", "school"],
+      ["--years-of-experience", "yearsOfExperience"],
+    ],
+    write: { slot: "save-search" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("delete-saved-search", {
+    positionals: ["id"],
+    write: { slot: "delete-saved-search" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("create-list", {
+    positionals: ["name"],
+    flags: [["--description", "description"]],
+    write: { slot: "create-list" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("delete-list", {
+    positionals: ["id"],
+    write: { slot: "delete-list" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("list-add", {
+    positionals: ["listId", "urn"],
+    write: { slot: "list-add" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("list-remove", {
+    positionals: ["listId", "urn"],
+    write: { slot: "list-remove" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("message", {
+    positionals: ["urn"],
+    flags: [
+      ["--text", "text"],
+      ["--expect-name", "expectName"],
+      ["--subject", "subject"],
+      // Preview-first: omitted/false composes and returns the exact text
+      // WITHOUT sending; send=true is required to actually send.
+      ["--send", "send"],
+    ],
+    write: { slot: "message" },
+    minCliVersion: "1.53.0",
+  }),
+  salesnav("connect", {
+    positionals: ["urn"],
+    flags: [
+      ["--expect-name", "expectName"],
+      // Optional invitation note attached to the connection request.
+      ["--note", "note"],
+      // Preview-first: omitted/false opens the Connect flow and returns the
+      // note WITHOUT sending; send=true is required to actually send.
+      ["--send", "send"],
+    ],
+    write: { slot: "connect", variable: true },
+    minCliVersion: "1.53.0",
+  }),
 
   read("reddit", "search", ["query"]),
   read("reddit", "subreddit", ["target"]),
@@ -617,8 +722,9 @@ function chatActionSpec(args: {
   };
 }
 
-// Sales Navigator commands nest under `linkedin salesnav <verb> [subVerb]`
-// and are all cookie-transport reads (the CLI ignores --via for them).
+// Sales Navigator commands nest under `linkedin salesnav <verb> [subVerb]`.
+// Reads run over the cookies transport; the DOM WRITE verbs (opts.write) are
+// wab-only and run on the persona/twin WAB (--via wab, --no-auto-persona).
 function salesnav(
   verb: string,
   opts: {
@@ -635,6 +741,12 @@ function salesnav(
     facetFlags?: [flag: string, field: string][];
     flags?: FlagSpec[];
     pagination?: boolean;
+    // A DOM WRITE verb: flips the transport to wab and consumes the named
+    // slot. `variable` marks preview-first writes (mirrors the hosted
+    // registry's variableSlots): the slot is the maximum a SEND charges, and
+    // the default preview consumes nothing.
+    write?: { slot: string; variable?: true };
+    minCliVersion?: string;
   } = {},
 ): LocalActionSpec {
   const action =
@@ -677,15 +789,19 @@ function salesnav(
           ],
     ),
   ];
-  return {
+  const spec: LocalActionSpec = {
     platform: "linkedin",
     action,
-    kind: "read",
-    requestedSlots: {},
-    variableSlots: false,
+    kind: opts.write ? "write" : "read",
+    requestedSlots: opts.write ? { [opts.write.slot]: 1 } : {},
+    variableSlots: opts.write?.variable === true,
     toolName: `linkedin_${action.replaceAll("-", "_")}`,
-    via: "cookies",
-    payloadFields,
+    via: opts.write ? "wab" : "cookies",
+    // FIELD_OVERRIDES wins (same as actionSpec): the derived fields type every
+    // flag as an optional generic value, but writes like salesnav-message/
+    // salesnav-connect have required non-empty strings (text, expectName) in
+    // both the CLI and the hosted schema, and the MCP schema must say so.
+    payloadFields: FIELD_OVERRIDES[`linkedin/${action}`] ?? payloadFields,
     supportsPagination: opts.pagination ?? false,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
@@ -721,8 +837,9 @@ function salesnav(
         "--persona",
         persona,
         "--via",
-        "cookies",
+        opts.write ? "wab" : "cookies",
       );
+      if (opts.write) argv.push("--no-auto-persona");
       for (const [flag, field] of opts.facetFlags ?? []) {
         pushRepeatedFlag(argv, flag, parsed[field]);
       }
@@ -731,6 +848,9 @@ function salesnav(
       return argv;
     },
   };
+  return opts.minCliVersion === undefined
+    ? spec
+    : withMinCliVersion(spec, opts.minCliVersion);
 }
 
 // X DMs nest under `x dm <verb>`. Reads default to cookies; writes are
@@ -910,6 +1030,13 @@ function engageCommenters(): LocalActionSpec {
 
 function viaForKind(kind: LocalActionKind): "cookies" | "wab" {
   return kind === "read" ? "cookies" : "wab";
+}
+
+function withMinCliVersion(
+  spec: LocalActionSpec,
+  minCliVersion: string,
+): LocalActionSpec {
+  return { ...spec, minCliVersion };
 }
 
 function withTimeout(

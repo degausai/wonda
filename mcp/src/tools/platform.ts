@@ -141,6 +141,8 @@ function zodForPayloadField(field: PayloadFieldSpec): z.ZodTypeAny {
     schema = z.enum(field.enum as [string, ...string[]]);
   } else if (field.kind === "string") {
     schema = z.string().min(1);
+  } else if (field.kind === "boolean") {
+    schema = z.boolean();
   } else if (field.kind === "stringArray") {
     const items = z.array(z.string());
     schema = field.maxCount === undefined ? items : items.max(field.maxCount);

@@ -45,6 +45,16 @@ export function getCachedBinaryVersion(): string | undefined {
 }
 
 /**
+ * Drops the cached `wonda --version` result and re-probes. Used by the
+ * per-action version gate so a user who upgrades the binary mid-session is
+ * unblocked on retry without restarting the MCP host.
+ */
+export function refreshBinaryVersion(): Promise<string | undefined> {
+  binaryVersionPromise = undefined;
+  return captureBinaryVersion();
+}
+
+/**
  * Runs `wonda --version` once per process and caches the parsed version.
  * Resolves undefined when the binary is missing or prints no numeric
  * version (dev builds print "wonda version dev").
