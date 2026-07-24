@@ -42,6 +42,12 @@ export type LocalActionSpec = {
   // The minCliVersion floor applies only when this predicate returns true for
   // the call's payload (absent = always).
   minCliVersionWhen?: (payload: Record<string, unknown>) => boolean;
+  // The floor that still applies to the payload shapes minCliVersionWhen
+  // EXCLUDES. Without it, narrowing the gate would drop it entirely for those
+  // shapes and a binary too old to have the verb at all would exec an unknown
+  // command instead of returning the 409 upgrade guidance. Ignored when
+  // minCliVersionWhen is absent (the main floor already covers everything).
+  minCliVersionBase?: string;
   // On a non-zero exit, attach stdout as the error result's `partialResult`
   // when it still parses as JSON, instead of discarding it. Opt-in: only
   // linkedin/enrich's CLI contract keeps already-resolved batch items in
@@ -449,7 +455,21 @@ const ACTION_DEFINITIONS = [
       ),
       600_000,
     ),
-    "1.54.0",
+    // First CLI release that accepts the batch `targets` + `--via wab` activity
+    // grammar. wonda/v1.54.0 (the latest tag) is single-target/cookies-only, so
+    // a local 1.54.0 binary must be gated out rather than exec'd with argv it
+    // cannot parse. Mirrors the relay floor in packages/features action-registry.
+    "1.55.0",
+    // ...but only for the shapes 1.54.0 can't run. The local verb defaults to
+    // cookies (the read() `via` above), so an absent override is a cookies run
+    // and stays ungated; only via=wab or a batch (targets) needs 1.55.0. (This
+    // differs from the relay predicate, whose buildArgv hardcodes --via wab, so
+    // there an absent override is an effective wab run.)
+    (payload) => "targets" in payload || payload.via === "wab",
+    // The narrowed-out shape still needs the verb to EXIST: `wonda linkedin
+    // activity` first shipped in wonda/v1.38.0 (v1.37.1 has no such command),
+    // so older binaries still get the 409 upgrade response.
+    "1.38.0",
   ),
   read("linkedin", "comment-reactors", ["commentUrn"]),
   write("linkedin", "delete-comment", "comment", ["target"]),
@@ -1581,8 +1601,9 @@ function withMinCliVersion(
   spec: LocalActionSpec,
   minCliVersion: string,
   minCliVersionWhen?: (payload: Record<string, unknown>) => boolean,
+  minCliVersionBase?: string,
 ): LocalActionSpec {
-  return { ...spec, minCliVersion, minCliVersionWhen };
+  return { ...spec, minCliVersion, minCliVersionWhen, minCliVersionBase };
 }
 
 function withTimeout(

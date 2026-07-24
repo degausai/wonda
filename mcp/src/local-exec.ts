@@ -91,18 +91,25 @@ export async function runLocalVerb(
   // fail as an unknown command, so refuse with upgrade guidance instead
   // (mirrors the relay's minVersionForAction handshake). Unknown/dev binary
   // versions never block.
-  if (
-    spec.minCliVersion !== undefined &&
-    (spec.minCliVersionWhen === undefined ||
-      spec.minCliVersionWhen(
-        effectivePayloadForVersionGate(args.payload, args.via),
-      ))
-  ) {
+  // A narrowed-out payload falls back to minCliVersionBase (when set) rather
+  // than losing the gate: the verb itself still has to exist in the installed
+  // binary, so an older one must get the 409 upgrade guidance instead of
+  // exec'ing an unknown command. Absent base = no floor (prior behavior).
+  const requiredCliVersion =
+    spec.minCliVersion === undefined
+      ? undefined
+      : spec.minCliVersionWhen === undefined ||
+          spec.minCliVersionWhen(
+            effectivePayloadForVersionGate(args.payload, args.via),
+          )
+        ? spec.minCliVersion
+        : spec.minCliVersionBase;
+  if (requiredCliVersion !== undefined) {
     const capture = options.captureVersion ?? captureBinaryVersion;
     let binaryVersion = await capture();
     if (
       binaryVersion !== undefined &&
-      compareVersions(binaryVersion, spec.minCliVersion) < 0
+      compareVersions(binaryVersion, requiredCliVersion) < 0
     ) {
       // The version is cached for the process lifetime, so a user who just
       // upgraded the binary would stay blocked until an MCP restart; re-probe
@@ -113,11 +120,11 @@ export async function runLocalVerb(
     }
     if (
       binaryVersion !== undefined &&
-      compareVersions(binaryVersion, spec.minCliVersion) < 0
+      compareVersions(binaryVersion, requiredCliVersion) < 0
     ) {
       return {
         ok: false,
-        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(spec.minCliVersion)} or newer. Update the wonda CLI to use this tool.`,
+        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(requiredCliVersion)} or newer. Update the wonda CLI to use this tool.`,
         status: 409,
       };
     }
