@@ -1,5 +1,6 @@
 export type LocalActionKind = "read" | "write";
 export type LocalActionPlatform = "linkedin" | "reddit" | "x" | "instagram";
+export type LocalActionVia = "cookies" | "wab";
 
 export type LocalActionSpec = {
   platform: LocalActionPlatform;
@@ -8,15 +9,31 @@ export type LocalActionSpec = {
   requestedSlots: Record<string, number>;
   variableSlots: boolean;
   toolName: string;
-  via: "cookies" | "wab";
+  // Transports the installed CLI and hosted action path can actually run.
+  // This is intentionally separate from `via`, which is only the action's
+  // default. Schema advertising and pre-dispatch validation both use this
+  // capability list.
+  supportedVia: LocalActionVia[];
+  via: LocalActionVia;
   // When set, buildArgv honors a payload.via of "cookies"|"wab" over the
   // spec's default transport. Additive: specs that don't opt in are
   // byte-identical to today's hardcoded-via behavior.
   viaOverride?: boolean;
   payloadFields: PayloadFieldSpec[];
   supportsPagination: boolean;
+  // When true, reject payload keys outside payloadFields instead of forwarding
+  // or silently ignoring them. Used where the CLI has a deliberately narrow
+  // contract that differs from the generic read pagination shape.
+  strictPayload?: boolean;
+  // Forces the outer tool's payload object to remain required when its
+  // individual fields are optional because a cross-field XOR validator owns
+  // the actual requirement.
+  payloadRequired?: boolean;
   // Overrides the default 180s exec timeout for long-paced actions.
   timeoutMs?: number;
+  // Optional action-specific contract checks that cannot be represented by
+  // individual field bounds, such as a pagination-product ceiling.
+  validatePayload?: (payload: Record<string, unknown>) => void;
   // Minimum installed CLI version that implements this verb. Local MCP updates
   // independently of the wonda binary, so runLocalVerb refuses with upgrade
   // guidance instead of exec'ing an unknown command. Mirrors the server
@@ -39,9 +56,11 @@ export type LocalActionSpec = {
 export type PayloadFieldSpec = {
   name: string;
   required: boolean;
-  kind: "string" | "value" | "boolean" | "stringArray";
+  kind: "string" | "value" | "boolean" | "stringArray" | "positiveInteger";
   enum?: string[];
+  minCount?: number;
   maxCount?: number;
+  max?: number;
   /** Agent-facing hint (rendered as the field's schema `.describe()`) so a
    * remote tool caller knows what to send instead of getting a bare
    * validation error. */
@@ -57,20 +76,62 @@ type MediaSpec = { flag: "--media" | "--attach"; maxCount: number };
 const DEFAULT_DURATION_MS = 120_000;
 const MAX_DURATION_MS = 180_000;
 const ENGAGE_COMMENTERS_DEFAULT_DURATION_MS = 180_000;
+// A 100-post --comments read includes sequential navigation plus stability
+// passes. Match the cloud runner's 780s action budget plus process grace.
+const LINKEDIN_POSTS_TIMEOUT_MS = 840_000;
+
+const COOKIE_CAPABLE_WRITE_ACTIONS = new Set([
+  "linkedin/connect",
+  "linkedin/delete-post",
+  "linkedin/like",
+  "linkedin/post",
+  "linkedin/send-message",
+  "linkedin/unlike",
+  "x/bookmark",
+  "x/follow",
+  "x/like",
+  "x/quote",
+  "x/reply",
+  "x/retweet",
+  "x/tweet",
+  "x/unbookmark",
+  "x/unfollow",
+  "x/unlike",
+  "x/unretweet",
+]);
 
 // Actions whose buildArgv reads fields the generic derivation cannot see
 // (function positionals/flags). Overrides replace the derived list wholesale.
 const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
+  "linkedin/posts": [
+    { name: "target", required: true, kind: "string" },
+    {
+      name: "count",
+      required: false,
+      kind: "positiveInteger",
+      max: 100,
+    },
+    { name: "comments", required: false, kind: "boolean" },
+  ],
   "linkedin/connection-status": [
     { name: "targets", required: true, kind: "stringArray" },
   ],
   "linkedin/activity": [
     {
       name: "target",
-      required: true,
+      required: false,
       kind: "string",
       description:
-        'The LinkedIn member whose recent activity to fetch: a profile URL, vanity handle (e.g. "williamhgates"), or member URN.',
+        'One LinkedIn member whose recent activity to fetch. Exactly one of target or targets is required. Accepts a profile URL, vanity handle (e.g. "williamhgates"), or member URN.',
+    },
+    {
+      name: "targets",
+      required: false,
+      kind: "stringArray",
+      minCount: 2,
+      maxCount: 10,
+      description:
+        "A batch of 2 to 10 LinkedIn members whose recent activity to fetch. Exactly one of target or targets is required; batch count may not exceed 25.",
     },
     {
       name: "type",
@@ -80,7 +141,14 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
       description:
         'Which activity to return: "all" (default), "comments", or "reactions".',
     },
-    { name: "count", required: false, kind: "value" },
+    {
+      name: "count",
+      required: false,
+      kind: "positiveInteger",
+      max: 100,
+      description:
+        "Items to request per profile: at most 100 with target, or at most 25 with targets.",
+    },
   ],
   "linkedin/enrich": [
     {
@@ -120,6 +188,21 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
       enum: ["cookies", "public"],
     },
   ],
+  "linkedin/salesnav-profile": [
+    {
+      name: "urns",
+      required: true,
+      kind: "stringArray",
+      maxCount: 20,
+    },
+    {
+      name: "enrich",
+      required: false,
+      kind: "boolean",
+      description:
+        "Fetch education and experience details. When true, the top-level transport must be cookies.",
+    },
+  ],
   "linkedin/salesnav-connect": [
     { name: "urn", required: true, kind: "string" },
     { name: "expectName", required: true, kind: "string" },
@@ -132,6 +215,46 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
     { name: "expectName", required: true, kind: "string" },
     { name: "subject", required: false, kind: "string" },
     { name: "send", required: false, kind: "boolean" },
+  ],
+  "reddit/submit": [
+    {
+      name: "subreddit",
+      required: true,
+      kind: "string",
+      description:
+        'Subreddit name, or a profile target beginning with "u/" or "u_". Profile posts require the cookies transport.',
+    },
+    { name: "title", required: true, kind: "string" },
+    { name: "text", required: false, kind: "string" },
+    {
+      name: "url",
+      required: false,
+      kind: "string",
+      description:
+        "Link-post URL. Link posts require the cookies transport and cannot use text, mediaRefs, flair, or dryRun.",
+    },
+    {
+      name: "flair",
+      required: false,
+      kind: "string",
+      description:
+        "Subreddit text/media flair. Only available on the WAB transport.",
+    },
+    {
+      name: "dryRun",
+      required: false,
+      kind: "boolean",
+      description:
+        "Fill the subreddit composer without posting. Only available on the WAB transport.",
+    },
+    {
+      name: "mediaRefs",
+      required: false,
+      kind: "stringArray",
+      maxCount: 1,
+      description:
+        "One local media reference for a subreddit media post. Requires WAB and cannot be combined with text or url.",
+    },
   ],
   "reddit/vote": [
     { name: "fullname", required: true, kind: "string" },
@@ -164,7 +287,21 @@ const ACTION_DEFINITIONS = [
       ["--no-scroll", "noScroll"],
     ],
   ),
-  read("linkedin", "posts", ["target"]),
+  withTimeout(
+    read(
+      "linkedin",
+      "posts",
+      ["target"],
+      [
+        ["--comments", "comments"],
+        ["--count", "count"],
+      ],
+      "cookies",
+      false,
+      { strictPayload: true },
+    ),
+    LINKEDIN_POSTS_TIMEOUT_MS,
+  ),
   read("linkedin", "post-details", ["target"]),
   read("linkedin", "analytics", ["target"]),
   read("linkedin", "comments", ["target"]),
@@ -180,6 +317,8 @@ const ACTION_DEFINITIONS = [
       ["--with-author-profile", "withAuthorProfile"],
     ],
     "wab",
+    true,
+    { supportedVia: ["cookies", "wab"] },
   ),
   read("linkedin", "saves", []),
   read("linkedin", "reactions", ["target"]),
@@ -189,9 +328,17 @@ const ACTION_DEFINITIONS = [
   read("linkedin", "notifications", []),
   read("linkedin", "connections", []),
   read("linkedin", "sent-invitations", []),
-  read("linkedin", "invitations", []),
-  read("linkedin", "connection-status", (payload) =>
-    stringArrayField(payload, "targets"),
+  read("linkedin", "invitations", [], [], "cookies", true, {
+    supportedVia: ["cookies"],
+  }),
+  read(
+    "linkedin",
+    "connection-status",
+    (payload) => stringArrayField(payload, "targets"),
+    [],
+    "cookies",
+    true,
+    { supportedVia: ["cookies"] },
   ),
   write(
     "linkedin",
@@ -240,7 +387,9 @@ const ACTION_DEFINITIONS = [
   // Read side of the credit pool linkedin/inmail spends; no pagination.
   // 1.53.0 is the first CLI release with the verb.
   withMinCliVersion(
-    read("linkedin", "inmail-credits", [], [], "cookies", false),
+    read("linkedin", "inmail-credits", [], [], "cookies", false, {
+      supportedVia: ["cookies"],
+    }),
     "1.53.0",
   ),
   write(
@@ -270,6 +419,7 @@ const ACTION_DEFINITIONS = [
       withMinCliVersion(
         read("linkedin", "enrich", enrichPositionals, [], "cookies", true, {
           viaOverride: true,
+          supportedVia: ["cookies", "wab"],
         }),
         "1.53.0",
         (payload) => payload.via === "wab",
@@ -278,16 +428,28 @@ const ACTION_DEFINITIONS = [
     600_000,
   ),
   write("linkedin", "follow", "follow", ["target"]),
-  read(
-    "linkedin",
-    "activity",
-    ["target"],
-    [
-      ["--type", "type"],
-      ["--count", "count"],
-    ],
-    "cookies",
-    false,
+  withMinCliVersion(
+    withTimeout(
+      read(
+        "linkedin",
+        "activity",
+        activityPositionals,
+        [
+          ["--type", "type"],
+          ["--count", "count"],
+        ],
+        "cookies",
+        false,
+        {
+          payloadRequired: true,
+          strictPayload: true,
+          supportedVia: ["cookies", "wab"],
+          validatePayload: validateActivityPayload,
+        },
+      ),
+      600_000,
+    ),
+    "1.54.0",
   ),
   read("linkedin", "comment-reactors", ["commentUrn"]),
   write("linkedin", "delete-comment", "comment", ["target"]),
@@ -330,39 +492,72 @@ const ACTION_DEFINITIONS = [
       ],
       "cookies",
       false,
+      { supportedVia: ["cookies"] },
     ),
     310_000,
   ),
-  salesnav("search", {
-    optionalPositionals: ["keywords"],
-    facetFlags: [
-      ["--seniority", "seniority"],
-      ["--region", "region"],
-      ["--industry", "industry"],
-      ["--company", "company"],
-      ["--function", "function"],
-      ["--connection-of", "connectionOf"],
-      ["--title", "title"],
-      ["--past-title", "pastTitle"],
-      ["--past-company", "pastCompany"],
-      ["--school", "school"],
-      ["--years-of-experience", "yearsOfExperience"],
-    ],
-    pagination: true,
-  }),
+  // The WAB-first path is human-paced and the local MCP call waits
+  // synchronously. Mirror the hosted action's 280s budget and bounded
+  // pagination contract so a default count=100 call cannot implicitly ask for
+  // 1,000 leads through the CLI's default maxPages=10.
+  withTimeout(
+    salesnav("search", {
+      defaultVia: "wab",
+      supportedVia: ["cookies", "wab"],
+      preserveImplicitVia: true,
+      optionalPositionals: ["keywords"],
+      facetFlags: [
+        ["--seniority", "seniority"],
+        ["--region", "region"],
+        ["--industry", "industry"],
+        ["--company", "company"],
+        ["--function", "function"],
+        ["--connection-of", "connectionOf"],
+        ["--title", "title"],
+        ["--past-title", "pastTitle"],
+        ["--past-company", "pastCompany"],
+        ["--school", "school"],
+        ["--years-of-experience", "yearsOfExperience"],
+      ],
+      pagination: true,
+      paginationFields: [
+        {
+          name: "count",
+          required: false,
+          kind: "positiveInteger",
+          max: 100,
+        },
+        {
+          name: "maxPages",
+          required: false,
+          kind: "positiveInteger",
+          max: 15,
+        },
+        { name: "delayMs", required: false, kind: "value" },
+      ],
+      strictPayload: true,
+      validatePayload: validateSalesnavSearchPayload,
+    }),
+    280_000,
+  ),
   salesnav("facets", { optionalPositionals: ["type", "query"] }),
   salesnav("typeahead", { positionals: ["query"] }),
-  salesnav("profile", {
-    // --enrich makes ~2 extra by-URN reads per lead, so the CLI caps enriched
-    // calls at 25 (salesnavEnrichCap). Reject >25 up front instead of failing at
-    // runtime; unenriched calls keep the 50-lead batch ceiling.
-    variadicField: {
-      name: "urns",
-      maxCount: 50,
-      enrichCap: { field: "enrich", maxCount: 25 },
-    },
-    flags: [["--enrich", "enrich"]],
-  }),
+  // The synchronous hosted contract caps both transports at 20 profiles. An
+  // explicitly pinned WAB batch visits those pages sequentially, so give the
+  // local CLI the same 280s DOM budget instead of the generic 180s timeout.
+  withTimeout(
+    salesnav("profile", {
+      defaultVia: "wab",
+      supportedVia: ["cookies", "wab"],
+      preserveImplicitVia: true,
+      variadicField: {
+        name: "urns",
+        maxCount: 20,
+      },
+      flags: [["--enrich", "enrich"]],
+    }),
+    280_000,
+  ),
   salesnav("insights", { positionals: ["urn"] }),
   salesnav("warm-intro", {
     positionals: ["urn"],
@@ -380,7 +575,11 @@ const ACTION_DEFINITIONS = [
   salesnav("recommended", { subVerb: "leads", pagination: true }),
   salesnav("recommended", { subVerb: "companies", pagination: true }),
   salesnav("alerts"),
-  salesnav("lists"),
+  salesnav("lists", {
+    defaultVia: "wab",
+    supportedVia: ["cookies", "wab"],
+    preserveImplicitVia: true,
+  }),
   salesnav("personas"),
   salesnav("recent"),
   salesnav("saved-searches"),
@@ -463,21 +662,21 @@ const ACTION_DEFINITIONS = [
     minCliVersion: "1.53.0",
   }),
 
-  read("reddit", "search", ["query"]),
-  read("reddit", "subreddit", ["target"]),
-  read("reddit", "rules", ["target"]),
-  read("reddit", "feed", ["subreddit"]),
-  read("reddit", "comments", ["subreddit"]),
-  read("reddit", "user", ["target"]),
-  read("reddit", "whoami", []),
-  read("reddit", "user-posts", ["target"]),
-  read("reddit", "user-comments", ["target"]),
-  read("reddit", "post", ["target"]),
-  read("reddit", "analytics", ["target"]),
-  read("reddit", "trending", []),
-  read("reddit", "home", []),
-  read("reddit", "saved", []),
-  read("reddit", "inbox", []),
+  redditRead("search", ["query"]),
+  redditRead("subreddit", ["target"]),
+  redditRead("rules", ["target"]),
+  redditRead("feed", ["subreddit"]),
+  redditRead("comments", ["subreddit"]),
+  redditRead("user", ["target"]),
+  redditRead("whoami", []),
+  redditRead("user-posts", ["target"]),
+  redditRead("user-comments", ["target"]),
+  redditRead("post", ["target"]),
+  redditRead("analytics", ["target"]),
+  redditRead("trending", []),
+  redditRead("home", []),
+  redditRead("saved", []),
+  redditRead("inbox", []),
   write(
     "reddit",
     "comment",
@@ -508,20 +707,7 @@ const ACTION_DEFINITIONS = [
       ["--post-id", "postId"],
     ],
   ),
-  write(
-    "reddit",
-    "submit",
-    "submit",
-    ["subreddit"],
-    [
-      ["--title", "title"],
-      ["--text", "text"],
-      ["--url", "url"],
-      ["--flair", "flair"],
-      ["--dry-run", "dryRun"],
-    ],
-    { flag: "--media", maxCount: 1 },
-  ),
+  redditSubmit(),
   write("reddit", "subscribe", "subscribe", ["target"]),
   write("reddit", "save", "save", ["fullname"], [["--post-id", "postId"]]),
   write("reddit", "unsave", "save", ["fullname"], [["--post-id", "postId"]]),
@@ -603,8 +789,12 @@ const ACTION_DEFINITIONS = [
     ],
   ),
 
-  read("instagram", "saved", []),
-  read("instagram", "comments", ["target"]),
+  read("instagram", "saved", [], [], "cookies", true, {
+    supportedVia: ["cookies"],
+  }),
+  read("instagram", "comments", ["target"], [], "cookies", true, {
+    supportedVia: ["cookies"],
+  }),
   write("instagram", "comment", "comment", ["media", "text"]),
   feedEngage("instagram", "like"),
 ];
@@ -622,9 +812,15 @@ function read(
   action: string,
   positionals: string[] | ((payload: Payload) => string[]),
   flags: FlagSpec[] = [],
-  via: "cookies" | "wab" = "cookies",
+  via: LocalActionVia = "cookies",
   pagination = true,
-  options: { viaOverride?: boolean } = {},
+  options: {
+    viaOverride?: boolean;
+    strictPayload?: boolean;
+    payloadRequired?: boolean;
+    supportedVia?: LocalActionVia[];
+    validatePayload?: (payload: Payload) => void;
+  } = {},
 ): LocalActionSpec {
   return actionSpec({
     platform,
@@ -635,8 +831,22 @@ function read(
     positionals,
     flags,
     via,
+    supportedVia: options.supportedVia ?? ["cookies", "wab"],
     pagination,
     viaOverride: options.viaOverride,
+    strictPayload: options.strictPayload,
+    payloadRequired: options.payloadRequired,
+    validatePayload: options.validatePayload,
+  });
+}
+
+function redditRead(
+  action: string,
+  positionals: string[] | ((payload: Payload) => string[]),
+  flags: FlagSpec[] = [],
+): LocalActionSpec {
+  return read("reddit", action, positionals, flags, "cookies", true, {
+    supportedVia: ["cookies"],
   });
 }
 
@@ -657,6 +867,9 @@ function write(
     positionals,
     flags,
     media,
+    supportedVia: COOKIE_CAPABLE_WRITE_ACTIONS.has(`${platform}/${action}`)
+      ? ["cookies", "wab"]
+      : ["wab"],
   });
 }
 
@@ -700,11 +913,18 @@ function actionSpec(args: {
   positionals: string[] | ((payload: Payload) => string[]);
   flags: FlagSpec[];
   media?: MediaSpec;
-  via?: "cookies" | "wab";
+  via?: LocalActionVia;
+  supportedVia: LocalActionVia[];
   viaOverride?: boolean;
   pagination?: boolean;
+  strictPayload?: boolean;
+  payloadRequired?: boolean;
+  validatePayload?: (payload: Payload) => void;
 }): LocalActionSpec {
   const pagination = args.pagination ?? true;
+  const payloadFields =
+    FIELD_OVERRIDES[`${args.platform}/${args.action}`] ??
+    derivePayloadFields(args.positionals, args.flags, args.media);
   return {
     platform: args.platform,
     action: args.action,
@@ -713,13 +933,17 @@ function actionSpec(args: {
     variableSlots: args.variableSlots,
     toolName: `${args.platform}_${args.action.replaceAll("-", "_")}`,
     via: args.via ?? viaForKind(args.kind),
+    supportedVia: args.supportedVia,
     viaOverride: args.viaOverride,
-    payloadFields:
-      FIELD_OVERRIDES[`${args.platform}/${args.action}`] ??
-      derivePayloadFields(args.positionals, args.flags, args.media),
+    payloadFields,
     supportsPagination: pagination,
+    strictPayload: args.strictPayload,
+    payloadRequired: args.payloadRequired,
+    validatePayload: args.validatePayload,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
+      validateKnownPayloadFields(parsed, payloadFields, args.strictPayload);
+      args.validatePayload?.(parsed);
       const viaValue =
         args.viaOverride && (parsed.via === "cookies" || parsed.via === "wab")
           ? parsed.via
@@ -745,6 +969,172 @@ function actionSpec(args: {
   };
 }
 
+export function validateLocalActionVia(
+  spec: LocalActionSpec,
+  via: LocalActionVia | undefined,
+  payload: unknown,
+): void {
+  const key = `${spec.platform}/${spec.action}`;
+  const parsed = checkIsRecord(payload) ? payload : {};
+  const effectiveVia =
+    key === "reddit/submit" ? redditSubmitVia(parsed, via) : via;
+
+  if (effectiveVia !== undefined && !spec.supportedVia.includes(effectiveVia)) {
+    throw new Error(
+      `${key} does not support via=${effectiveVia}; use ${spec.supportedVia.join(" or ")}`,
+    );
+  }
+
+  if (key === "reddit/submit") {
+    validateRedditSubmitPayload(
+      parsed,
+      effectiveVia ?? redditSubmitVia(parsed),
+    );
+  }
+  if (
+    key === "linkedin/salesnav-profile" &&
+    effectiveVia === "wab" &&
+    parsed.enrich === true
+  ) {
+    throw new Error(
+      "linkedin/salesnav-profile with enrich=true requires via=cookies",
+    );
+  }
+
+  if (effectiveVia !== "cookies") return;
+  if (
+    (key === "linkedin/like" || key === "linkedin/unlike") &&
+    parsed.comment !== undefined
+  ) {
+    throw new Error(`${key} comment reactions require via=wab`);
+  }
+  if (key === "linkedin/send-message" && parsed.dryRun === true) {
+    throw new Error("linkedin/send-message dryRun requires via=wab");
+  }
+  if (
+    ["linkedin/post", "x/reply"].includes(key) &&
+    Array.isArray(parsed.mediaRefs) &&
+    parsed.mediaRefs.length > 0
+  ) {
+    throw new Error(`${key} with mediaRefs requires via=wab`);
+  }
+}
+
+export function resolveLocalActionVia(
+  spec: LocalActionSpec,
+  via: LocalActionVia | undefined,
+  payload: unknown,
+): LocalActionVia | undefined {
+  if (via !== undefined) return via;
+  if (
+    spec.platform === "reddit" &&
+    spec.action === "submit" &&
+    checkIsRecord(payload)
+  ) {
+    return redditSubmitVia(payload);
+  }
+  return undefined;
+}
+
+function redditSubmit(): LocalActionSpec {
+  const base = actionSpec({
+    platform: "reddit",
+    action: "submit",
+    kind: "write",
+    requestedSlots: { submit: 1 },
+    variableSlots: false,
+    positionals: ["subreddit"],
+    flags: [
+      ["--title", "title"],
+      ["--text", "text"],
+      ["--url", "url"],
+      ["--flair", "flair"],
+      ["--dry-run", "dryRun"],
+    ],
+    media: { flag: "--media", maxCount: 1 },
+    via: "wab",
+    supportedVia: ["cookies", "wab"],
+  });
+  return {
+    ...base,
+    buildArgv(payload, persona, account) {
+      const parsed = requirePayloadObject(payload);
+      requiredStringField(parsed, "title");
+      const via = redditSubmitVia(parsed);
+      validateRedditSubmitPayload(parsed, via);
+      const argv = base.buildArgv(parsed, persona, account);
+      const viaIndex = argv.indexOf("--via");
+      argv[viaIndex + 1] = via;
+      return argv;
+    },
+  };
+}
+
+function redditSubmitVia(
+  payload: Payload,
+  explicitVia?: LocalActionVia,
+): LocalActionVia {
+  if (explicitVia !== undefined) return explicitVia;
+  return checkIsRedditProfileTarget(payload.subreddit) ||
+    checkIsNonEmptyString(payload.url)
+    ? "cookies"
+    : "wab";
+}
+
+function validateRedditSubmitPayload(
+  payload: Payload,
+  via: LocalActionVia,
+): void {
+  const isProfile = checkIsRedditProfileTarget(payload.subreddit);
+  const hasText = checkIsNonEmptyString(payload.text);
+  const hasUrl = checkIsNonEmptyString(payload.url);
+  const hasFlair = checkIsNonEmptyString(payload.flair);
+  const hasMedia =
+    Array.isArray(payload.mediaRefs) && payload.mediaRefs.length > 0;
+
+  if (hasText && hasUrl) {
+    throw new Error("reddit/submit text and url are mutually exclusive");
+  }
+  if (hasMedia && (hasText || hasUrl)) {
+    throw new Error(
+      "reddit/submit mediaRefs are mutually exclusive with text and url",
+    );
+  }
+  if (isProfile && hasMedia) {
+    throw new Error("reddit/submit profile posts do not support mediaRefs");
+  }
+  if (hasFlair && (isProfile || hasUrl)) {
+    throw new Error(
+      "reddit/submit flair is only supported for subreddit text or media posts",
+    );
+  }
+
+  const requiredVia: LocalActionVia = isProfile || hasUrl ? "cookies" : "wab";
+  if (via !== requiredVia) {
+    const postKind = isProfile
+      ? "profile posts"
+      : hasUrl
+        ? "link posts"
+        : "subreddit text or media posts";
+    throw new Error(`reddit/submit ${postKind} require via=${requiredVia}`);
+  }
+  if (via === "cookies" && payload.dryRun === true) {
+    throw new Error(
+      "reddit/submit dryRun is only supported for via=wab subreddit posts",
+    );
+  }
+}
+
+function checkIsRedditProfileTarget(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const target = value.toLowerCase();
+  return target.startsWith("u_") || target.startsWith("u/");
+}
+
+function checkIsNonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value !== "";
+}
+
 function chatActionSpec(args: {
   verb: string;
   kind: LocalActionKind;
@@ -760,7 +1150,8 @@ function chatActionSpec(args: {
     requestedSlots: args.requestedSlots,
     variableSlots: args.variableSlots,
     toolName: `reddit_chat_${args.verb.replaceAll("-", "_")}`,
-    via: viaForKind(args.kind),
+    via: "wab",
+    supportedVia: ["wab"],
     payloadFields: derivePayloadFields(args.positionals, args.flags, undefined),
     supportsPagination: false,
     buildArgv(payload, persona, account) {
@@ -776,7 +1167,7 @@ function chatActionSpec(args: {
         "--persona",
         persona,
         "--via",
-        viaForKind(args.kind),
+        "wab",
       ];
       if (args.kind === "write") argv.push("--no-auto-persona");
       pushFlags(argv, args.flags, parsed);
@@ -792,6 +1183,11 @@ function salesnav(
   verb: string,
   opts: {
     subVerb?: string;
+    defaultVia?: LocalActionVia;
+    supportedVia?: LocalActionVia[];
+    // Search, profile, and lists intentionally leave --via unpinned by
+    // default so the CLI can use its WAB-first path with cookie fallback.
+    preserveImplicitVia?: boolean;
     positionals?: string[];
     optionalPositionals?: string[];
     // enrichCap lowers maxCount when the named boolean flag is set, matching a
@@ -804,6 +1200,9 @@ function salesnav(
     facetFlags?: [flag: string, field: string][];
     flags?: FlagSpec[];
     pagination?: boolean;
+    paginationFields?: PayloadFieldSpec[];
+    strictPayload?: boolean;
+    validatePayload?: (payload: Payload) => void;
     // A DOM WRITE verb: flips the transport to wab and consumes the named
     // slot. `variable` marks preview-first writes (mirrors the hosted
     // registry's variableSlots): the slot is the maximum a SEND charges, and
@@ -851,6 +1250,7 @@ function salesnav(
             } satisfies PayloadFieldSpec,
           ],
     ),
+    ...(opts.paginationFields ?? []),
   ];
   const spec: LocalActionSpec = {
     platform: "linkedin",
@@ -859,15 +1259,20 @@ function salesnav(
     requestedSlots: opts.write ? { [opts.write.slot]: 1 } : {},
     variableSlots: opts.write?.variable === true,
     toolName: `linkedin_${action.replaceAll("-", "_")}`,
-    via: opts.write ? "wab" : "cookies",
+    via: opts.write ? "wab" : (opts.defaultVia ?? "cookies"),
+    supportedVia: opts.write ? ["wab"] : (opts.supportedVia ?? ["cookies"]),
     // FIELD_OVERRIDES wins (same as actionSpec): the derived fields type every
     // flag as an optional generic value, but writes like salesnav-message/
     // salesnav-connect have required non-empty strings (text, expectName) in
     // both the CLI and the hosted schema, and the MCP schema must say so.
     payloadFields: FIELD_OVERRIDES[`linkedin/${action}`] ?? payloadFields,
     supportsPagination: opts.pagination ?? false,
+    strictPayload: opts.strictPayload,
+    validatePayload: opts.validatePayload,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
+      validateKnownPayloadFields(parsed, payloadFields, opts.strictPayload);
+      opts.validatePayload?.(parsed);
       const argv = ["--json", "linkedin", "salesnav", verb];
       if (opts.subVerb !== undefined) argv.push(opts.subVerb);
       argv.push(...fields(parsed, opts.positionals ?? []));
@@ -894,14 +1299,10 @@ function salesnav(
         }
         argv.push(...values);
       }
-      argv.push(
-        "--account",
-        account ?? persona,
-        "--persona",
-        persona,
-        "--via",
-        opts.write ? "wab" : "cookies",
-      );
+      argv.push("--account", account ?? persona, "--persona", persona);
+      if (opts.write || opts.preserveImplicitVia !== true) {
+        argv.push("--via", opts.write ? "wab" : (opts.defaultVia ?? "cookies"));
+      }
       if (opts.write) argv.push("--no-auto-persona");
       for (const [flag, field] of opts.facetFlags ?? []) {
         pushRepeatedFlag(argv, flag, parsed[field]);
@@ -914,6 +1315,30 @@ function salesnav(
   return opts.minCliVersion === undefined
     ? spec
     : withMinCliVersion(spec, opts.minCliVersion);
+}
+
+const SALESNAV_SYNC_MAX_LEADS = 375;
+
+function validateSalesnavSearchPayload(payload: Payload): void {
+  const delayMs = payload.delayMs;
+  if (
+    delayMs !== undefined &&
+    (typeof delayMs !== "number" ||
+      !Number.isInteger(delayMs) ||
+      delayMs < 0 ||
+      delayMs > 5_000)
+  ) {
+    throw new Error("delayMs must be an integer between 0 and 5000");
+  }
+
+  const count = payload.count;
+  if (typeof count !== "number") return;
+  const maxPages = typeof payload.maxPages === "number" ? payload.maxPages : 10;
+  if (count * maxPages > SALESNAV_SYNC_MAX_LEADS) {
+    throw new Error(
+      `count x maxPages (10 when unset) must stay at or under ${SALESNAV_SYNC_MAX_LEADS} leads for a synchronous DOM search`,
+    );
+  }
 }
 
 // X DMs nest under `x dm <verb>`. Reads default to cookies; writes are
@@ -934,6 +1359,7 @@ function xDm(
     variableSlots: false,
     toolName: `x_dm_${verb.replaceAll("-", "_")}`,
     via: viaForKind(kind),
+    supportedVia: kind === "read" ? ["cookies", "wab"] : ["wab"],
     payloadFields:
       FIELD_OVERRIDES[`x/${action}`] ??
       derivePayloadFields(positionals, flags, undefined),
@@ -973,6 +1399,7 @@ function feedEngage(
     variableSlots: false,
     toolName: `${platform}_feed_engage`,
     via: "wab",
+    supportedVia: ["wab"],
     payloadFields: feedEngagePayloadFields(platform),
     supportsPagination: false,
     buildArgv(payload, persona, account) {
@@ -1042,6 +1469,7 @@ function engageCommenters(): LocalActionSpec {
     variableSlots: true,
     toolName: "linkedin_engage_commenters",
     via: "wab",
+    supportedVia: ["wab"],
     payloadFields: [
       { name: "post", required: true, kind: "string" },
       { name: "actions", required: false, kind: "stringArray" },
@@ -1120,6 +1548,33 @@ function enrichPositionals(payload: Payload): string[] {
     return targets;
   }
   return [requiredStringField(payload, "target")];
+}
+
+function activityPositionals(payload: Payload): string[] {
+  const hasTarget = payload.target !== undefined && payload.target !== null;
+  const hasTargets = payload.targets !== undefined && payload.targets !== null;
+  if (hasTarget === hasTargets) {
+    throw new Error("Exactly one of target or targets is required");
+  }
+  if (hasTargets) {
+    const targets = requiredStringArrayField(payload, "targets");
+    if (targets.length < 2) {
+      throw new Error("targets must have at least 2 items");
+    }
+    if (targets.length > 10) {
+      throw new Error("targets must have at most 10 items");
+    }
+    return targets;
+  }
+  return [requiredStringField(payload, "target")];
+}
+
+function validateActivityPayload(payload: Payload): void {
+  activityPositionals(payload);
+  const count = typeof payload.count === "number" ? payload.count : 20;
+  if (payload.targets !== undefined && payload.targets !== null && count > 25) {
+    throw new Error("batch count must be at most 25");
+  }
 }
 
 function withMinCliVersion(
@@ -1287,6 +1742,31 @@ function requirePayloadObject(payload: unknown): Payload {
     throw new Error("payload must be an object");
   }
   return payload;
+}
+
+function validateKnownPayloadFields(
+  payload: Payload,
+  fieldSpecs: PayloadFieldSpec[],
+  strict = false,
+): void {
+  const known = new Set(fieldSpecs.map((field) => field.name));
+  if (strict) {
+    const unknown = Object.keys(payload).find((field) => !known.has(field));
+    if (unknown !== undefined) {
+      throw new Error(`unsupported payload field: ${unknown}`);
+    }
+  }
+  for (const field of fieldSpecs) {
+    if (field.kind !== "positiveInteger") continue;
+    const value = payload[field.name];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`${field.name} must be a positive integer`);
+    }
+    if (field.max !== undefined && value > field.max) {
+      throw new Error(`${field.name} must be at most ${field.max}`);
+    }
+  }
 }
 
 function requiredStringField(payload: Payload, field: string): string {

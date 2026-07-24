@@ -21,6 +21,7 @@ const server = createWondaMcpServer(
             kind: entry.kind,
             persona: args.persona,
             account: args.account,
+            via: args.via,
             payload: args.payload,
           }),
       }

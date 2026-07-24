@@ -8,7 +8,10 @@ import type {
   LocalActionKind,
   LocalActionPlatform,
 } from "./local-action-registry.js";
-import { LOCAL_ACTIONS } from "./local-action-registry.js";
+import {
+  LOCAL_ACTIONS,
+  validateLocalActionVia,
+} from "./local-action-registry.js";
 import { getCliVersionPolicy } from "./version-policy.js";
 import {
   buildUpdateInstruction,
@@ -60,6 +63,7 @@ export type LocalVerbArgs = {
   kind: LocalActionKind;
   persona?: string;
   account?: string;
+  via?: "cookies" | "wab";
   payload?: unknown;
 };
 
@@ -90,7 +94,9 @@ export async function runLocalVerb(
   if (
     spec.minCliVersion !== undefined &&
     (spec.minCliVersionWhen === undefined ||
-      spec.minCliVersionWhen((args.payload ?? {}) as Record<string, unknown>))
+      spec.minCliVersionWhen(
+        effectivePayloadForVersionGate(args.payload, args.via),
+      ))
   ) {
     const capture = options.captureVersion ?? captureBinaryVersion;
     let binaryVersion = await capture();
@@ -119,8 +125,10 @@ export async function runLocalVerb(
 
   let argv: string[];
   try {
+    validateLocalActionVia(spec, args.via, args.payload ?? {});
     const persona = await resolvePersona(args.persona, args.account);
     argv = spec.buildArgv(args.payload ?? {}, persona, args.account);
+    overrideArgvVia(argv, args.via);
   } catch (error) {
     return {
       ok: false,
@@ -135,6 +143,28 @@ export async function runLocalVerb(
     preservePartialStdout: spec.preservePartialStdout,
     ...options,
   });
+}
+
+function effectivePayloadForVersionGate(
+  payload: unknown,
+  via: LocalVerbArgs["via"],
+): Record<string, unknown> {
+  const effective =
+    payload !== null && typeof payload === "object" && !Array.isArray(payload)
+      ? { ...(payload as Record<string, unknown>) }
+      : {};
+  if (via !== undefined) effective.via = via;
+  return effective;
+}
+
+function overrideArgvVia(argv: string[], via: LocalVerbArgs["via"]): void {
+  if (via === undefined) return;
+  const viaIndex = argv.indexOf("--via");
+  if (viaIndex === -1) {
+    argv.push("--via", via);
+    return;
+  }
+  argv[viaIndex + 1] = via;
 }
 
 export function runWabStatus(

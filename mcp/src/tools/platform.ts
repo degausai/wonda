@@ -3,16 +3,34 @@ import { z } from "zod";
 import type { ApiResult } from "../api.js";
 import type {
   LocalActionSpec,
+  LocalActionVia,
   PayloadFieldSpec,
 } from "../local-action-registry.js";
 import type { TwinActionManifestEntry } from "./twin-action-manifest.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { apiPost } from "../api.js";
-import { LOCAL_ACTIONS } from "../local-action-registry.js";
+import {
+  LOCAL_ACTIONS,
+  resolveLocalActionVia,
+  validateLocalActionVia,
+} from "../local-action-registry.js";
 import { splitTwinNotices } from "../notices.js";
 import { checkIsLocalMode } from "../version.js";
 import { annotationsForTwinActionKind } from "./annotations.js";
 import { TWIN_ACTION_MANIFEST } from "./twin-action-manifest.js";
+
+function platformViaSchema(supported: LocalActionVia[] = ["cookies", "wab"]) {
+  return z
+    .enum(supported as [LocalActionVia, ...LocalActionVia[]])
+    .optional()
+    .describe(
+      `Transport override: ${supported
+        .map((via) =>
+          via === "cookies" ? "stored cookies" : "the Wonda Automation Browser",
+        )
+        .join(" or ")}`,
+    );
+}
 
 const platformActionInputSchema = z.object({
   persona: z
@@ -25,6 +43,7 @@ const platformActionInputSchema = z.object({
     .min(1)
     .optional()
     .describe("Local account label for cookie and WAB persona selection"),
+  via: platformViaSchema(),
   payload: z
     .record(z.string(), z.unknown())
     .optional()
@@ -36,6 +55,7 @@ export type PlatformToolExecutor = (
   args: {
     persona?: string;
     account?: string;
+    via?: "cookies" | "wab";
     payload?: Record<string, unknown>;
   },
 ) => Promise<ApiResult<unknown>>;
@@ -69,6 +89,7 @@ export function registerPlatformTools(
       async (args: {
         persona?: string;
         account?: string;
+        via?: "cookies" | "wab";
         payload?: Record<string, unknown>;
       }) => toolResult(await execute(entry, args)),
     );
@@ -109,11 +130,48 @@ function actionInputSchema(spec: LocalActionSpec, isLocal: boolean) {
   for (const field of spec.payloadFields) {
     shape[field.name] = zodForPayloadField(field);
   }
-  const payloadRequired = spec.payloadFields.some((field) => field.required);
-  const payload = z
-    .object(shape)
-    .passthrough()
-    .describe(payloadDescription(spec, isLocal));
+  const payloadRequired =
+    spec.payloadRequired ?? spec.payloadFields.some((field) => field.required);
+  const payloadObject = z.object(shape);
+  const basePayload = spec.strictPayload
+    ? payloadObject.strict()
+    : payloadObject.passthrough();
+  const actionValidatedPayload =
+    spec.validatePayload === undefined
+      ? basePayload
+      : basePayload.superRefine((value, context) => {
+          try {
+            spec.validatePayload?.(value);
+          } catch (error) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Invalid action payload",
+            });
+          }
+        });
+  // Keep the outer tool schema as a ZodObject: the MCP SDK only advertises
+  // object schemas. Reddit's payload-only contradictions can still be checked
+  // here; top-level via/payload correlations are enforced by both executors.
+  const validatedPayload =
+    spec.platform === "reddit" && spec.action === "submit"
+      ? actionValidatedPayload.superRefine((value, context) => {
+          try {
+            validateLocalActionVia(spec, undefined, value);
+          } catch (error) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Invalid action transport or payload",
+            });
+          }
+        })
+      : actionValidatedPayload;
+  const payload = validatedPayload.describe(payloadDescription(spec, isLocal));
   return z.object({
     persona: z
       .string()
@@ -131,6 +189,7 @@ function actionInputSchema(spec: LocalActionSpec, isLocal: boolean) {
       .describe(
         "Account label selecting the local cookie store and WAB persona; omit for the configured default",
       ),
+    via: platformViaSchema(spec.supportedVia),
     payload: payloadRequired ? payload : payload.optional(),
   });
 }
@@ -144,8 +203,13 @@ function zodForPayloadField(field: PayloadFieldSpec): z.ZodTypeAny {
   } else if (field.kind === "boolean") {
     schema = z.boolean();
   } else if (field.kind === "stringArray") {
-    const items = z.array(z.string());
-    schema = field.maxCount === undefined ? items : items.max(field.maxCount);
+    let items = z.array(z.string());
+    if (field.minCount !== undefined) items = items.min(field.minCount);
+    if (field.maxCount !== undefined) items = items.max(field.maxCount);
+    schema = items;
+  } else if (field.kind === "positiveInteger") {
+    const integer = z.number().int().positive();
+    schema = field.max === undefined ? integer : integer.max(field.max);
   } else {
     schema = z.union([z.string(), z.number(), z.boolean()]);
   }
@@ -167,10 +231,12 @@ async function remotePlatformExecutor(
   entry: TwinActionManifestEntry,
   {
     persona,
+    via,
     payload,
   }: {
     persona?: string;
     account?: string;
+    via?: "cookies" | "wab";
     payload?: Record<string, unknown>;
   },
 ): Promise<ApiResult<unknown>> {
@@ -182,8 +248,25 @@ async function remotePlatformExecutor(
     };
   }
 
+  const spec = LOCAL_ACTIONS[entry.key];
+  let effectiveVia = via;
+  try {
+    if (spec !== undefined) {
+      validateLocalActionVia(spec, via, payload ?? {});
+      effectiveVia = resolveLocalActionVia(spec, via, payload ?? {});
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Unsupported action transport",
+      status: 400,
+    };
+  }
+
+  const path = `/twin/sessions/${encodeURIComponent(persona)}/actions/${entry.platform}/${entry.action}`;
   return apiPost(
-    `/twin/sessions/${encodeURIComponent(persona)}/actions/${entry.platform}/${entry.action}`,
+    effectiveVia === undefined ? path : `${path}?via=${effectiveVia}`,
     payload ?? {},
   );
 }
