@@ -1013,7 +1013,6 @@ export const TWIN_ACTION_MANIFEST: TwinActionManifestEntry[] = [
     requestedSlots: {},
     variableSlots: false,
     toolName: "x_dm_inbox",
-    localOnly: true,
   },
   {
     key: "x/dm-read",
@@ -1023,7 +1022,6 @@ export const TWIN_ACTION_MANIFEST: TwinActionManifestEntry[] = [
     requestedSlots: {},
     variableSlots: false,
     toolName: "x_dm_read",
-    localOnly: true,
   },
   {
     key: "x/dm-requests",
@@ -1033,7 +1031,6 @@ export const TWIN_ACTION_MANIFEST: TwinActionManifestEntry[] = [
     requestedSlots: {},
     variableSlots: false,
     toolName: "x_dm_requests",
-    localOnly: true,
   },
   {
     key: "x/dm-send",
