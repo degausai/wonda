@@ -167,6 +167,8 @@ Autopilot: `run_campaign` (one bounded autonomous campaign, approved once) and `
 | `publish_instagram` / `publish_tiktok`                                   | Publish media to connected accounts                |
 | `wonda_status`                                                           | Installed binary version vs latest/min supported   |
 | `wonda_whoami`                                                           | Acting Wonda account, engine policy, active device |
+| `list_content_skills`                                                    | Discover effective account-specific workflows      |
+| `get_content_skill`                                                      | Fetch one full, current workflow by slug           |
 | `wab_status` (local mode only)                                           | Running WAB personas with PID and socket path      |
 | `wab_show` / `wab_hide` (local mode only)                                | Surface the WAB window on screen / send it back    |
 | `wab_open` (local mode only)                                             | Navigate the WAB to a platform or URL              |
@@ -181,11 +183,13 @@ Platform read actions are tagged read-only for Always-allow clients; write actio
 
 ## Resources
 
-| Resource     | URI                    | Description                    |
-| ------------ | ---------------------- | ------------------------------ |
-| Balance      | `wonda://balance`      | Credit balance and refill time |
-| Capabilities | `wonda://capabilities` | All models and operations      |
-| Twins        | `wonda://twins`        | Provisioned twins with status  |
+| Resource       | URI                     | Description                                  |
+| -------------- | ----------------------- | -------------------------------------------- |
+| Balance        | `wonda://balance`       | Credit balance and refill time               |
+| Capabilities   | `wonda://capabilities`  | All models and operations                    |
+| Twins          | `wonda://twins`         | Provisioned twins with status                |
+| Content skills | `wonda://skills`        | Effective defaults, forks, and custom skills |
+| Content skill  | `wonda://skills/{slug}` | Full account-resolved workflow in Markdown   |
 
 ## Environment Variables
 

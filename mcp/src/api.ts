@@ -92,6 +92,44 @@ export async function apiGet<T = unknown>(
   return parseResponse<T>(response);
 }
 
+/**
+ * GET a plain-text endpoint without attempting to JSON-decode a successful
+ * response. Content skills are Markdown, but user-authored skills may also be
+ * valid JSON; preserving the response bytes keeps those skills exact.
+ */
+export async function apiGetText(
+  path: string,
+  query?: Record<string, string | undefined>,
+): Promise<ApiResult<string>> {
+  const headers = getAuthHeaders();
+  if (headers.ok === false) return apiError(headers);
+
+  const url = new URL(buildUrl(path));
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) url.searchParams.set(key, value);
+    }
+  }
+
+  const response = await fetch(url, { headers: headers.data });
+  const text = await response.text();
+  if (!response.ok) {
+    let errorData: unknown = text;
+    try {
+      errorData = JSON.parse(text);
+    } catch {
+      // The API may return a plain-text error. extractError handles both.
+    }
+    return {
+      ok: false,
+      error: extractError(errorData, response.status),
+      status: response.status,
+    };
+  }
+
+  return { ok: true, data: text, status: response.status };
+}
+
 export async function apiPost<T = unknown>(
   path: string,
   body?: unknown,

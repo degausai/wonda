@@ -413,7 +413,10 @@ const ACTION_DEFINITIONS = [
   write("linkedin", "edit-comment", "comment", ["target", "text"]),
   feedEngage("linkedin", "like"),
   engageCommenters(),
-  // 1.53.0 is the first CLI release that accepts --via wab for enrich.
+  // 1.54.0 is the first CLI release that accepts --via wab for enrich:
+  // #3312 merged 2026-07-23 14:39Z, after wonda/v1.53.0 (13:47Z) and
+  // wonda/v1.53.1 (15:10Z) were cut, so the first tag that ships the verb
+  // is wonda/v1.54.0 (22:12Z). The floor applies only to via=wab payloads.
   // A full 10-target batch runs 9 inter-profile sleeps (4-12s jitter, up to
   // 108s worst case) plus up to 3 voyager reads per profile (profile,
   // education, per-experience company lookups), comfortably under the
@@ -427,7 +430,7 @@ const ACTION_DEFINITIONS = [
           viaOverride: true,
           supportedVia: ["cookies", "wab"],
         }),
-        "1.53.0",
+        "1.54.0",
         (payload) => payload.via === "wab",
       ),
     ),
