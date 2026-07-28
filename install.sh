@@ -21,6 +21,8 @@ Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 0.1.0)
     --no-modify-path        Don't modify shell config files
+    --no-app                Don't offer to install the wonda desktop app
+                            (also skipped via WONDA_NO_AUTO_SETUP=1)
 
 Examples:
     curl -fsSL https://wonda.sh/install.sh | bash
@@ -30,6 +32,7 @@ EOF
 
 requested_version=""
 no_modify_path=false
+no_app=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,6 +47,7 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --no-modify-path) no_modify_path=true; shift ;;
+        --no-app) no_app=true; shift ;;
         *) echo -e "${RED}Unknown option: $1${NC}" >&2; shift ;;
     esac
 done
@@ -242,6 +246,49 @@ echo -e "${MUTED}wonda ${NC}${version}${MUTED} installed successfully${NC}"
 echo -e "${MUTED}Binary: ${NC}${INSTALL_DIR}/${APP}"
 echo -e ""
 
+# ---------------------------------------------------------------------------
+# Desktop app install (relay + tray icon + open at login), with consent
+# ---------------------------------------------------------------------------
+# This is our interactive installer, so it may offer the full experience:
+# 'wonda app install' downloads this version's signed desktop installer,
+# verifies it against the release checksums, and runs it (macOS asks the
+# normal sudo password). Consent-gated, default yes; skipped entirely when
+# non-interactive (curl|bash keeps stdin on the script pipe, so the prompt
+# and the CLI both talk to /dev/tty), in CI, with --no-app, or via
+# WONDA_NO_AUTO_SETUP=1. Linux has no desktop app.
+offer_app=true
+if [ "$os" = "linux" ] || [ "$no_app" = "true" ]; then
+    offer_app=false
+elif [ -n "${WONDA_NO_AUTO_SETUP:-}" ] && [ "${WONDA_NO_AUTO_SETUP}" != "0" ] && [ "${WONDA_NO_AUTO_SETUP}" != "false" ]; then
+    offer_app=false
+elif [ -n "${CI:-}" ] && [ "${CI}" != "0" ] && [ "${CI}" != "false" ]; then
+    offer_app=false
+elif [ ! -t 2 ] || ! { : < /dev/tty; } 2>/dev/null; then
+    # No terminal to prompt on (piped stderr, or no controlling tty).
+    offer_app=false
+fi
+
+if [ "$offer_app" = "true" ]; then
+    printf "Install the wonda desktop app and menu bar? (always-on relay, starts at login) [Y/n] " >&2
+    IFS= read -r app_answer < /dev/tty || app_answer=""
+    case "$(printf '%s' "$app_answer" | tr '[:upper:]' '[:lower:]')" in
+        n|no)
+            echo -e "${MUTED}Skipped. Get it any time with: ${NC}${APP} app install"
+            ;;
+        *)
+            # stdin from /dev/tty so the CLI sees a real terminal (curl|bash
+            # leaves stdin on the script pipe) and sudo can prompt.
+            if ! "$INSTALL_DIR/$APP" app install < /dev/tty; then
+                echo -e "${RED}The desktop app install did not finish.${NC} Retry with: ${APP} app install"
+            fi
+            ;;
+    esac
+    echo -e ""
+elif [ "$os" != "linux" ]; then
+    echo -e "${MUTED}Get the desktop app (menu bar + always-on relay) with: ${NC}${APP} app install"
+    echo -e ""
+fi
+
 # Tell the user how to activate in the current shell
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo -e "${MUTED}To use wonda in this shell session:${NC}"
@@ -262,6 +309,9 @@ fi
 echo -e "${MUTED}Get started:${NC}"
 echo -e ""
 echo -e "  wonda auth login          ${MUTED}# Authenticate${NC}"
+if [ "$os" != "linux" ]; then
+    echo -e "  wonda app install         ${MUTED}# Desktop app: menu bar icon + always-on relay${NC}"
+fi
 echo -e "  wonda skill install -o .  ${MUTED}# Install skill file${NC}"
 echo -e ""
 echo -e "${MUTED}For more information: ${NC}https://wonda.sh/docs"
