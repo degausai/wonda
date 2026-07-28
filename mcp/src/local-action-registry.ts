@@ -560,10 +560,32 @@ const ACTION_DEFINITIONS = [
       ],
       strictPayload: true,
       validatePayload: validateSalesnavSearchPayload,
+      // Plain-name facet values need the 1.53.0 resolver. An older binary
+      // passed facet values through untouched, so "France" went to LinkedIn as
+      // a region id and came back as wrong leads rather than an error. Opaque
+      // ids need no resolver, so the floor is payload-conditional: pinning it
+      // statically would block id-based searches that work fine on an older
+      // binary (the same reason `enrich` gates on via=wab only).
+      minCliVersion: "1.53.0",
+      minCliVersionWhen: checkSalesnavSearchUsesFacetNames,
     }),
     280_000,
   ),
-  salesnav("facets", { optionalPositionals: ["type", "query"] }),
+  // 1.53.0 taught the CLI which typeahead type actually serves each search
+  // facet type (REGION under BING_GEO, SENIORITY_LEVEL under SENIORITY_V2, the
+  // titles under TITLE, ...). Before that the command queried the typeahead
+  // under the search facet type itself, which returns [] rather than erroring,
+  // so an older binary answers "no such region" for every real region. Refuse
+  // with upgrade guidance instead of handing back a silent [].
+  //
+  // Static floor, deliberately: it also blocks the types that DID work below
+  // 1.53.0 (INDUSTRY, FUNCTION, SCHOOL). Narrowing it would mean copying the
+  // alias list into this registry, and a second copy drifting from the Go map
+  // is the exact failure this floor exists to catch.
+  salesnav("facets", {
+    optionalPositionals: ["type", "query"],
+    minCliVersion: "1.53.0",
+  }),
   salesnav("typeahead", { positionals: ["query"] }),
   // The synchronous hosted contract caps both transports at 20 profiles. An
   // explicitly pinned WAB batch visits those pages sequentially, so give the
@@ -1232,6 +1254,9 @@ function salesnav(
     // the default preview consumes nothing.
     write?: { slot: string; variable?: true };
     minCliVersion?: string;
+    // Applies the floor only to the payloads this predicate matches, so a verb
+    // that is only broken for SOME inputs does not block the rest.
+    minCliVersionWhen?: (payload: Record<string, unknown>) => boolean;
   } = {},
 ): LocalActionSpec {
   const action =
@@ -1337,10 +1362,52 @@ function salesnav(
   };
   return opts.minCliVersion === undefined
     ? spec
-    : withMinCliVersion(spec, opts.minCliVersion);
+    : withMinCliVersion(spec, opts.minCliVersion, opts.minCliVersionWhen);
 }
 
 const SALESNAV_SYNC_MAX_LEADS = 375;
+
+// Payload keys carrying salesnav search facet values, mirroring the facetFlags
+// on the `search` spec.
+const SALESNAV_SEARCH_FACET_FIELDS = [
+  "seniority",
+  "region",
+  "industry",
+  "company",
+  "function",
+  "connectionOf",
+  "title",
+  "pastTitle",
+  "pastCompany",
+  "school",
+  "yearsOfExperience",
+] as const;
+
+// Mirrors linkedinclient.facetValueLooksResolved: an all-digits value is
+// already an opaque LinkedIn id, and CONNECTION_OF carries AC-prefixed member
+// profile ids, which are never numeric. A '~' exclusion prefix is stripped by
+// the CLI before resolution, so strip it here too.
+function checkIsOpaqueFacetValue(field: string, value: string): boolean {
+  const bare = value.startsWith("~") ? value.slice(1) : value;
+  if (bare === "") return true;
+  if (field === "connectionOf") return /^AC[A-Za-z0-9_-]{18,}$/.test(bare);
+  return /^\d+$/.test(bare);
+}
+
+// True when any facet flag carries a plain NAME rather than an opaque id, i.e.
+// when the search depends on the 1.53.0 name resolver. Exported for the tests.
+export function checkSalesnavSearchUsesFacetNames(
+  payload: Record<string, unknown>,
+): boolean {
+  return SALESNAV_SEARCH_FACET_FIELDS.some((field) => {
+    const raw = payload[field];
+    const values = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+    return values.some(
+      (value) =>
+        typeof value === "string" && !checkIsOpaqueFacetValue(field, value),
+    );
+  });
+}
 
 function validateSalesnavSearchPayload(payload: Payload): void {
   const delayMs = payload.delayMs;

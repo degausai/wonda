@@ -3,7 +3,18 @@ import { readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const INSTALL_CHANNELS = ["brew", "curl", "mcpb", "npm", "pkg"] as const;
+// Mirrors the Go CLI's update.Channel* constants and the server's
+// updateCommands keys. All three must agree, or a client gets an instruction it
+// cannot run: omitting "windows" here fell through to the "curl" default and
+// told Windows users to pipe a bash script.
+const INSTALL_CHANNELS = [
+  "brew",
+  "curl",
+  "mcpb",
+  "npm",
+  "pkg",
+  "windows",
+] as const;
 
 export type InstallChannel = (typeof INSTALL_CHANNELS)[number];
 
@@ -96,8 +107,12 @@ export function compareVersions(a: string, b: string): number {
 
 export function detectInstallChannel(): InstallChannel {
   const fromEnv = env["WONDA_INSTALL_CHANNEL"];
-  if (fromEnv !== undefined && checkIsInstallChannel(fromEnv)) return fromEnv;
-
+  // WONDA_BIN identifies the binary we will actually run, so it outranks a
+  // user-scoped marker describing some OTHER install. The Windows installer
+  // sets WONDA_INSTALL_CHANNEL=windows machine-wide: without this ordering, an
+  // npm user who also ran that installer would be told to update the Windows
+  // installer, which leaves their npm binary untouched and the 409 standing.
+  // The mcpb manifest sets both, and they agree, so nothing regresses there.
   const binary = env["WONDA_BIN"];
   if (binary !== undefined && binary.trim() !== "") {
     if (checkIsInsideThisPackage(binary)) return "mcpb";
@@ -106,6 +121,12 @@ export function detectInstallChannel(): InstallChannel {
     }
     if (binary.includes("node_modules")) return "npm";
   }
+  if (fromEnv !== undefined && checkIsInstallChannel(fromEnv)) return fromEnv;
+  // Platform check AFTER the binary heuristics, so an npm or bundled install on
+  // Windows still reports its real channel; only an otherwise-unidentified
+  // Windows install falls here. The curl default is a bash-only instruction, so
+  // it must not be what a Windows client lands on.
+  if (process.platform === "win32") return "windows";
   return "curl";
 }
 
@@ -115,6 +136,13 @@ export function buildUpdateInstruction(
 ): string | undefined {
   if (channel === "mcpb") {
     return "Update the Wonda extension in Claude settings.";
+  }
+  // Windows is a download URL like pkg, and must return BEFORE the pkg logic
+  // below: that path splices in updateCommands.pkg, which is the macOS
+  // installer, and would hand a Windows user a .pkg to run.
+  if (channel === "windows") {
+    const windowsUrl = policy?.updateCommands?.windows;
+    return windowsUrl === undefined ? undefined : `Download: ${windowsUrl}`;
   }
   const pkgUrl = policy?.updateCommands?.pkg;
   const command = policy?.updateCommands?.[channel] ?? policy?.updateCommand;

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ApiResult } from "./api.js";
+import type { UpdatePolicy } from "./version.js";
 import type {
   LocalActionKind,
   LocalActionPlatform,
@@ -122,9 +123,24 @@ export async function runLocalVerb(
       binaryVersion !== undefined &&
       compareVersions(binaryVersion, requiredCliVersion) < 0
     ) {
+      // Per-channel instruction rather than the generic "update the CLI": this
+      // refusal returns before runWonda, so the staleness notice that normally
+      // carries the instruction never runs. It matters most on mcpb, where the
+      // binary is embedded in the extension and `brew upgrade` cannot fix it.
+      //
+      // The refusal is a LOCAL verdict and must not wait on the network. mcpb
+      // needs no policy at all, and every other channel gets one bounded
+      // attempt: a stalled fetch would otherwise turn an instant 409 into a
+      // tool timeout, losing the very guidance this is here to deliver.
+      const channel = detectInstallChannel();
+      const policy =
+        channel === "mcpb"
+          ? undefined
+          : await withPolicyDeadline(getCliVersionPolicy());
+      const instruction = buildUpdateInstruction(channel, policy);
       return {
         ok: false,
-        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(requiredCliVersion)} or newer. Update the wonda CLI to use this tool.`,
+        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(requiredCliVersion)} or newer. ${instruction ?? "Update the wonda CLI to use this tool."}`,
         status: 409,
       };
     }
@@ -150,6 +166,32 @@ export async function runLocalVerb(
     preservePartialStdout: spec.preservePartialStdout,
     ...options,
   });
+}
+
+// Upper bound on how long a version refusal may wait for the update policy.
+// Short on purpose: the 409 itself is already decided, and the instruction is
+// a nicety we degrade rather than block on.
+const POLICY_DEADLINE_MS = 2_000;
+
+/**
+ * Resolves to the policy, or undefined if it does not arrive in time or fails.
+ * buildUpdateInstruction already degrades to `undefined` for a missing policy,
+ * so a slow network costs the caller a less specific sentence, never a hang.
+ */
+async function withPolicyDeadline(
+  policy: Promise<UpdatePolicy | undefined>,
+): Promise<UpdatePolicy | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      policy.catch(() => undefined),
+      new Promise<undefined>((resolvePromise) => {
+        timer = setTimeout(() => resolvePromise(undefined), POLICY_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function effectivePayloadForVersionGate(
