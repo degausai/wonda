@@ -155,6 +155,45 @@ Auth and seeding: `twin_seed_from_cookies` (seed a twin profile from stored cook
 
 Autopilot: `run_campaign` (one bounded autonomous campaign, approved once) and `schedule_loop` (recurring autonomous loop on a cron, same server-side caps).
 
+## Sequences (9)
+
+A sequence is a general Wonda workflow: ordered commands with spacing, rules and bounded fan-out.
+It can publish, read analytics, process Reddit posts, work through Sales Navigator results, use X
+DMs on the local relay, or compose those actions in one flow. Outreach is only one possible use.
+
+Four step kinds and no others. `run` is one generated Wonda argv
+(`{"run": ["x", "tweet", "{{vars.text}}", "--json"]}`, plus an `id` when a later step reads its
+output). `wait` is a deterministic pause or range (`"3d ± 6h"`, `"1d-2d"`,
+`{"min": "1d", "max": "2d"}`). `if` branches over `{{vars.*}}`,
+`{{steps.<id>.<field>}}` and current-item values, with normal AND-before-OR precedence. `each` runs a
+body sequentially over any array returned by an earlier command or supplied literally. It defaults
+to 500 items, can be explicitly raised to 5,000, and never silently truncates.
+
+Authoring: `sequence_validate` (checks a definition, stores nothing, always answers 200 with one fixable issue per problem plus the vars it needs), `sequence_create`, `sequence_update`, `sequence_delete`, `sequence_list`.
+
+Running: `sequence_run` requires the definition's vars and returns immediately, because a workflow
+with a 3-day wait takes 3 days. A run snapshots its definition, transport and billing scope, so
+later edits cannot change work in flight. `sequence_runs` reads status, position, outputs and exact
+fan-out failure counts; `sequence_cancel_run` stops a live run and prevents a queued step from
+escaping after cancellation.
+
+**The schedule is optional and never a default.** `sequence_schedule` attaches a validated 5-field
+cron in an IANA timezone or a one-shot `runAt`, with deterministic jitter and the vars each fire
+needs. Overlap is off by default and must be enabled explicitly. `detach: true` removes the trigger.
+
+Every write consumes the identity's ordinary action budget through the same safety gate as an
+interactive Wonda action, so over-budget work waits rather than disappearing. Relay execution is
+driven by the generated CLI manifest, not a hand-maintained action list: every LinkedIn, Sales
+Navigator, X and Reddit command the installed Wonda CLI exposes can be sequenced on the user's Mac,
+including nested and local-only commands. `auto` chooses that relay when a flow needs it, then
+snapshots the choice for the run.
+
+The whole surface is behind a per-account feature flag. Until it is enabled the tools answer "the sequencer is not enabled for your account".
+
+## Calendar (2)
+
+`wonda_calendar` (per-day counts over a range) and `wonda_calendar_day` (the entries for one day) unify upcoming twin schedule fires with past runs and platform actions, resolved in the viewer's timezone. A range returns counts only, aggregated in the database, so a month grid stays small no matter how much work the account has.
+
 ## Other tools
 
 | Tool                                                                     | Description                                        |
@@ -179,7 +218,10 @@ Media editing (trim, captions, overlays, ...) is a `wonda edit ...` CLI task, no
 
 ## Consent hints
 
-Platform read actions are tagged read-only for Always-allow clients; write actions are tagged non-read-only and destructive so clients request approval. Tools without a cloud-twin counterpart (the `x_dm_*` group; DMs are end-to-end encrypted with a locally stored passcode) are registered in local mode only. `run_campaign` and `schedule_loop` are the one-approval autopilot tools; the per-verb platform tools remain the supervised path.
+Platform read actions are tagged read-only for Always-allow clients; write actions are tagged
+non-read-only and destructive so clients request approval. `run_campaign`, `schedule_loop` and a
+user-authored sequence are durable one-approval surfaces; per-verb platform tools remain the
+supervised path.
 
 ## Resources
 
