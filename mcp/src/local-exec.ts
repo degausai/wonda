@@ -4,11 +4,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ApiResult } from "./api.js";
-import type { UpdatePolicy } from "./version.js";
 import type {
   LocalActionKind,
   LocalActionPlatform,
 } from "./local-action-registry.js";
+import type { UpdatePolicy } from "./version.js";
 import {
   LOCAL_ACTIONS,
   validateLocalActionVia,
