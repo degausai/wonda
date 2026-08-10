@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import {
+  buildAmbiguousOrgHint,
+  getCachedSeatOrgSlug,
+  resolveSeatOrg,
+} from "./org-scope.js";
 import { buildUserAgent } from "./version.js";
 
 const DEFAULT_BASE_URL = "https://api.wondercat.ai/api/v1";
@@ -7,11 +12,18 @@ const DEFAULT_BASE_URL = "https://api.wondercat.ai/api/v1";
 export type ApiContext = {
   apiKey: string;
   baseUrl?: string;
+  /**
+   * Organization slug to bill this session against, sent as `X-Wonda-Org`.
+   * The CLI equivalent is the sticky `wonda use --org <slug>`. When unset, an
+   * org seat can still be adopted automatically off a 403 — see org-scope.ts.
+   */
+  orgSlug?: string;
 };
 
 type NormalizedApiContext = {
   apiKey?: string;
   baseUrl: string;
+  orgSlug?: string;
 };
 
 const apiContextStorage = new AsyncLocalStorage<NormalizedApiContext>();
@@ -30,16 +42,20 @@ function getApiContext(): NormalizedApiContext {
   return normalizeApiContext({
     apiKey: process.env.WONDA_API_KEY ?? process.env.WONDERCAT_API_KEY ?? "",
     baseUrl: process.env.WONDA_BASE_URL,
+    orgSlug: process.env.WONDA_ORG,
   });
 }
 
 function normalizeApiContext(context: {
   apiKey?: string;
   baseUrl?: string;
+  orgSlug?: string;
 }): NormalizedApiContext {
+  const orgSlug = context.orgSlug?.trim();
   return {
     apiKey: context.apiKey,
     baseUrl: (context.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, ""),
+    ...(orgSlug !== undefined && orgSlug !== "" && { orgSlug }),
   };
 }
 
@@ -78,9 +94,6 @@ export async function apiGet<T = unknown>(
   path: string,
   query?: Record<string, string | undefined>,
 ): Promise<ApiResult<T>> {
-  const headers = getAuthHeaders();
-  if (headers.ok === false) return apiError(headers);
-
   const url = new URL(buildUrl(path));
   if (query) {
     for (const [key, value] of Object.entries(query)) {
@@ -88,8 +101,7 @@ export async function apiGet<T = unknown>(
     }
   }
 
-  const response = await fetch(url, { headers: headers.data });
-  return parseResponse<T>(response);
+  return sendRequest<T>((headers) => fetch(url, { headers }));
 }
 
 /**
@@ -134,77 +146,111 @@ export async function apiPost<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
-  const headers = getAuthHeaders();
-  if (headers.ok === false) return apiError(headers);
-
-  const response = await fetch(buildUrl(path), {
-    method: "POST",
-    headers: { ...headers.data, "Content-Type": "application/json" },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  return parseResponse<T>(response);
+  return sendRequest<T>((headers) =>
+    fetch(buildUrl(path), {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  );
 }
 
 export async function apiPut<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
-  const headers = getAuthHeaders();
-  if (headers.ok === false) return apiError(headers);
-
-  const response = await fetch(buildUrl(path), {
-    method: "PUT",
-    headers: { ...headers.data, "Content-Type": "application/json" },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  return parseResponse<T>(response);
+  return sendRequest<T>((headers) =>
+    fetch(buildUrl(path), {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  );
 }
 
 export async function apiPatch<T = unknown>(
   path: string,
   body?: unknown,
 ): Promise<ApiResult<T>> {
-  const headers = getAuthHeaders();
-  if (headers.ok === false) return apiError(headers);
-
-  const response = await fetch(buildUrl(path), {
-    method: "PATCH",
-    headers: { ...headers.data, "Content-Type": "application/json" },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  return parseResponse<T>(response);
+  return sendRequest<T>((headers) =>
+    fetch(buildUrl(path), {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+  );
 }
 
 export async function apiDelete<T = unknown>(
   path: string,
 ): Promise<ApiResult<T>> {
-  const headers = getAuthHeaders();
-  if (headers.ok === false) return apiError(headers);
-
-  const response = await fetch(buildUrl(path), {
-    method: "DELETE",
-    headers: headers.data,
-  });
-  return parseResponse<T>(response);
+  return sendRequest<T>((headers) =>
+    fetch(buildUrl(path), { method: "DELETE", headers }),
+  );
 }
 
 export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<ApiResult<T>> {
+  return sendRequest<T>((headers) =>
+    fetch(buildUrl(path), { method: "POST", headers, body: formData }),
+  );
+}
+
+/**
+ * Issues a request and, when the API rejects it purely for lack of a paid
+ * plan, retries once against an automatically adopted organization seat.
+ *
+ * Gated so it costs nothing in the normal case: only 403 `paid_plan_required`
+ * qualifies, only when no org slug is configured, and the org lookup is cached
+ * per API key (negative results included), so an account with no seat performs
+ * the extra call once per process rather than once per tool call.
+ */
+async function sendRequest<T>(
+  send: (headers: Record<string, string>) => Promise<Response>,
+): Promise<ApiResult<T>> {
   const headers = getAuthHeaders();
   if (headers.ok === false) return apiError(headers);
 
-  const response = await fetch(buildUrl(path), {
-    method: "POST",
-    headers: headers.data,
-    body: formData,
+  const first = await readResponse<T>(await send(headers.data));
+  if (!checkIsMissingPaidPlan(first)) return first.result;
+
+  const { apiKey, baseUrl, orgSlug } = getApiContext();
+  // An explicitly configured org must never be silently swapped for another.
+  if (orgSlug !== undefined || apiKey === undefined) return first.result;
+
+  const resolution = await resolveSeatOrg({
+    apiKey,
+    baseUrl,
+    userAgent: buildUserAgent(),
   });
-  return parseResponse<T>(response);
+
+  if (resolution.kind === "ambiguous") {
+    return {
+      ...first.result,
+      error: first.result.error + buildAmbiguousOrgHint(resolution.slugs),
+    } as ApiResult<T>;
+  }
+  if (resolution.kind !== "adopted") return first.result;
+
+  // getAuthHeaders now picks the adopted slug up from the cache. Retried at
+  // most once: a second 403 is returned as-is rather than recursing.
+  const retryHeaders = getAuthHeaders();
+  if (retryHeaders.ok === false) return first.result;
+  return (await readResponse<T>(await send(retryHeaders.data))).result;
+}
+
+function checkIsMissingPaidPlan<T>(parsed: ParsedResponse<T>): boolean {
+  return (
+    parsed.result.ok === false &&
+    parsed.result.status === 403 &&
+    parsed.errorCode === "paid_plan_required"
+  );
 }
 
 function getAuthHeaders(): ApiResult<Record<string, string>> {
-  const { apiKey } = getApiContext();
+  const { apiKey, orgSlug } = getApiContext();
   if (apiKey === undefined || apiKey.trim() === "") {
     return {
       ok: false,
@@ -215,11 +261,18 @@ function getAuthHeaders(): ApiResult<Record<string, string>> {
     };
   }
 
+  // Explicit configuration wins; otherwise fall back to a seat adopted by a
+  // previous 403 in this process (undefined until one has been).
+  const effectiveOrgSlug = orgSlug ?? getCachedSeatOrgSlug(apiKey);
+
   return {
     ok: true,
     data: {
       Authorization: `Bearer ${apiKey}`,
       "User-Agent": buildUserAgent(),
+      ...(effectiveOrgSlug !== undefined && {
+        "X-Wonda-Org": effectiveOrgSlug,
+      }),
     },
     status: 200,
   };
@@ -258,7 +311,28 @@ function extractPartialResult(data: unknown): unknown {
   return (errorField as Record<string, unknown>).partialResult;
 }
 
+type ParsedResponse<T> = {
+  result: ApiResult<T>;
+  /** `error.code` from the API error envelope; drives the org-seat retry. */
+  errorCode?: string;
+};
+
+// The error envelope is { error: { message, code } } (see createApiErrorException
+// in the api-service). `extractError` keeps only the message, so the code is
+// pulled out separately for callers that branch on it.
+function extractErrorCode(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const errorField = (data as Record<string, unknown>).error;
+  if (typeof errorField !== "object" || errorField === null) return undefined;
+  const code = (errorField as Record<string, unknown>).code;
+  return typeof code === "string" ? code : undefined;
+}
+
 async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
+  return (await readResponse<T>(response)).result;
+}
+
+async function readResponse<T>(response: Response): Promise<ParsedResponse<T>> {
   const text = await response.text();
   let data: T;
   try {
@@ -270,12 +344,17 @@ async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
   if (!response.ok) {
     const partialResult = extractPartialResult(data);
     return {
-      ok: false,
-      error: extractError(data, response.status),
-      status: response.status,
-      ...(partialResult !== undefined && { partialResult }),
+      result: {
+        ok: false,
+        error: extractError(data, response.status),
+        status: response.status,
+        ...(partialResult !== undefined && { partialResult }),
+      },
+      ...(extractErrorCode(data) !== undefined && {
+        errorCode: extractErrorCode(data),
+      }),
     };
   }
 
-  return { ok: true, data, status: response.status };
+  return { result: { ok: true, data, status: response.status } };
 }

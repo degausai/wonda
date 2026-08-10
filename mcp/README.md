@@ -233,15 +233,62 @@ supervised path.
 | Content skills | `wonda://skills`        | Effective defaults, forks, and custom skills |
 | Content skill  | `wonda://skills/{slug}` | Full account-resolved workflow in Markdown   |
 
+## Organizations and who pays
+
+Paid access lives either in a personal plan or in an **organization seat**. If
+your own account is on the free tier and your paid access comes from a seat in
+an org, requests have to say so, or the API bills (and gates) your personal
+account and every paid tool returns `paid_plan_required`.
+
+The CLI carries this in sticky config (`wonda use --org <slug>`). This server
+resolves it two ways:
+
+1. **`WONDA_ORG` (recommended).** Set it to the org slug and every request is
+   billed to that org. Required if you hold seats in more than one.
+2. **Automatic, single seat.** With `WONDA_ORG` unset, the first request that
+   fails with `paid_plan_required` looks up your organizations. If exactly one
+   of them gives you a seat, the server adopts it and retries. Nothing else in
+   the session changes, and the lookup happens once per process.
+
+```jsonc
+{
+  "mcpServers": {
+    "wonda": {
+      "command": "npx",
+      "args": ["-y", "@degausai/wonda-mcp"],
+      "env": {
+        "WONDA_API_KEY": "sk_your_api_key",
+        "WONDA_ORG": "acme", // omit to auto-adopt a single seat
+      },
+    },
+  },
+}
+```
+
+Notes:
+
+- A configured `WONDA_ORG` is never overridden. If it is wrong or you have no
+  seat in it, the request fails rather than quietly falling back to personal
+  credits.
+- Holding seats in **several** orgs is left ambiguous on purpose: the error
+  lists your slugs and asks you to set `WONDA_ORG`, so a tool call can never
+  pick which organization pays.
+- If your personal account has its own paid plan, nothing changes: those
+  requests never return `paid_plan_required`, so no org is ever adopted. Set
+  `WONDA_ORG` explicitly to spend from an org instead of your own plan.
+- Org credits are spent by the org wallet, so an org admin sees the usage under
+  your account in the organization's usage report.
+
 ## Environment Variables
 
-| Variable                | Required           | Description                                                        |
-| ----------------------- | ------------------ | ------------------------------------------------------------------ |
-| `WONDA_API_KEY`         | Yes for HTTP tools | Your Wonda API key (`sk_...`)                                      |
-| `WONDA_BASE_URL`        | No                 | Override API base URL (default: `https://api.wondercat.ai/api/v1`) |
-| `WONDA_MCP_MODE`        | No                 | Set to `local` to run platform action tools through local `wonda`  |
-| `WONDA_BIN`             | No                 | Path to the local or bundled `wonda` binary                        |
-| `WONDA_DEFAULT_ACCOUNT` | No                 | Default local WAB persona or account label                         |
+| Variable                | Required           | Description                                                                              |
+| ----------------------- | ------------------ | ---------------------------------------------------------------------------------------- |
+| `WONDA_API_KEY`         | Yes for HTTP tools | Your Wonda API key (`sk_...`)                                                            |
+| `WONDA_BASE_URL`        | No                 | Override API base URL (default: `https://api.wondercat.ai/api/v1`)                       |
+| `WONDA_ORG`             | No                 | Organization slug to bill; see [Organizations and who pays](#organizations-and-who-pays) |
+| `WONDA_MCP_MODE`        | No                 | Set to `local` to run platform action tools through local `wonda`                        |
+| `WONDA_BIN`             | No                 | Path to the local or bundled `wonda` binary                                              |
+| `WONDA_DEFAULT_ACCOUNT` | No                 | Default local WAB persona or account label                                               |
 
 ## License
 
