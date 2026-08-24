@@ -328,10 +328,6 @@ function extractErrorCode(data: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
-  return (await readResponse<T>(response)).result;
-}
-
 async function readResponse<T>(response: Response): Promise<ParsedResponse<T>> {
   const text = await response.text();
   let data: T;

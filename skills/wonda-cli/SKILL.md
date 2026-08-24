@@ -216,7 +216,7 @@ Silence both channels with `WONDA_QUIET=1` (env var) or `--quiet` (flag). Disabl
 The Wonda Automation Browser (WAB) is a premium stealth antidetect browser, hardened so platforms cannot fingerprint it as automation. `wonda wab` is the one command for the antidetect Chromium stack (an undetected Playwright fork). It has two faces:
 
 - **Authenticated sessions.** One persistent headful Chromium per persona that holds signed-in sessions for LinkedIn, X, Reddit, and friends. The CLI spawns it on demand, lets it idle out, and routes platform reads/writes through it whenever a command runs `--via wab`. Cookies live in the persona's Chromium profile, not in `~/.wonda/config.json`.
-- **Anonymous capture.** `wonda wab record <url>` (and `wonda brand extract`) drive an ephemeral Chromium with a fresh fingerprint, no persona, no cookies. See the `record` block below.
+- **Anonymous capture.** `wonda wab screenshot <url>`, `wonda wab record <url>`, and `wonda brand extract` drive an ephemeral Chromium with a fresh fingerprint, no persona, and no cookies. Screenshot supports responsive single, batch, and manifest capture. See the screenshot and record blocks below.
 
 The mental model: you have **accounts** (one identity per platform). Each platform command routes to that account's cookies via either the flat JSON store (`--via cookies`, fast, no Chromium) or the account's **persona** (`--via wab`, live antidetect Chromium). A persona is the Chromium envelope that can hold multiple accounts under one fingerprint. In almost every case the persona is auto-created on first `--via wab` use, named after the account, so you never type a persona name.
 
@@ -225,13 +225,14 @@ The local `wonda.mcpb` Desktop Extension uses this same local WAB path from Clau
 **Native login is the default for a new persona.** `wonda wab login <persona> <platform>` opens a headful WAB window and you log in there. The session is minted INSIDE the WAB, so it is independent (logging out of the same account in an unrelated Chrome cannot revoke it) and the cookies are born under the WAB's own fingerprint, so session and browser identity stay coherent. A brand-new persona auto-created on first `--via wab` use chains straight into this flow on a TTY. After an X login, Wonda detects the signed-in `screen_name` and records it as the persona's X account binding. Existing bindings are never silently changed; a different detected handle produces a warning. Pasting cookies from another browser (`wonda linkedin auth set`, `wonda x auth set`, ...) still works and is the explicit fallback, but a hand-pasted `li_at` on a novel WAB fingerprint is the highest-risk shape.
 
 ```bash
-wonda wab install                             # one-time: npm install + stealth-browser Chromium (shared by sessions, record, brand extract)
+wonda wab install                             # one-time: npm install + stealth-browser Chromium (shared by sessions, screenshot, record, brand extract)
 wonda wab update                              # refresh the runtime to the version this CLI pins (runtime versions ship inside CLI releases): staged download, verified, then atomically swapped in, so a failed download leaves the current driver tree untouched; refuses the runtime swap while personas run (wab stop them first; the relay picks the new runtime up on its next spawn, no restart), while an already-current tree's cheap manifest refresh proceeds without the gate: it reconciles drifted current files back to this build's embedded bytes (additive rewrites, safe under a running persona) and only prunes stale files when NO personas are running, deferring the prune (and keeping the mismatch visible) until the tree is quiet; --check reports installed vs pinned without changing anything, --force reinstalls even when current and re-downloads the shared Chromium build (corrupt-cache recovery; caveat: --force clears the cached Chromium before re-downloading, so a failed forced download leaves the shared cache without it until a retry succeeds). The driver tree also carries a manifest recording what produced it: the embedded driver asset identity compatibility is actually keyed on, plus the CLI build and platform as provenance. A tree whose recorded assets differ from this binary's embedded set (or that predates manifests) is refreshed automatically at the next browser spawn or wab update; two builds shipping byte-identical driver assets share one manifest without churn, so the recorded CLI version can lag behind the newest compatible binary. --check reports the manifest state (ok|absent|mismatch|unreadable) without touching anything; --json only changes the output format and still performs the update
 wonda wab start [account]                     # spawn (offscreen by default; --visible to show)
 wonda wab stop [account]                      # graceful shutdown
 wonda wab show [account]                       # peek a background WAB on-screen to watch it (suspends the macOS focus guard); starts it offscreen first if needed
 wonda wab hide [account]                       # send a surfaced WAB back offscreen, resume silent background operation
-wonda wab screenshot [account]                 # capture the persona's current page as a PNG without surfacing the window; --json returns inline base64, --output writes a file, --tab/--full-page optional
+wonda wab screenshot [persona]                 # persona mode: capture an already-open tab without surfacing it; --json still returns inline base64, --output writes a file, --tab/--full-page optional
+wonda wab screenshot <url> --output page.png   # anonymous PNG in a fresh ephemeral browser; responsive waits, injection, animation, element, clip, batch, manifest, and diagnostic JSON controls, see below
 wonda wab browse [url] --persona <persona>     # load a page and scroll it like a person: pause, scroll, pause, scroll; stops early once the scrolled element stops advancing, see below (plain text output, not JSON)
 wonda wab menubar                              # Tray control, macOS menu bar or Windows notification area: the Wonda cat icon with a corner status badge. Green filled = running here and serving; orange half = standing by, which proves only that this machine is not the active device (whether another device or no device is serving is a separate three-way the badge cannot answer, and the menu's detail line only echoes the last relay-health check, a snapshot that can lag while this machine stays in standby); red triangle = running but cannot serve; grey hollow = not running here. The badge carries shape as well as color (filled/half/triangle/hollow) on both platforms; macOS falls back to a 🐱 text item with the same states as glyphs. Click for Restart Relay, a state-following Stop/Start toggle (`wonda relay disable`/`enable`, never `relay stop`), Open Log (macOS only; the Windows task runs the relay with no log file), and Show/Hide per running WAB; the tooltip carries the full status sentence. The bottom item "Quit Wonda" runs `wonda app quit` (stop relay + disable autostart + remove every open-at-login mechanism (macOS login item, Windows Startup entry) + remove the icon; quit stays quit until the app or `wonda app open` runs again). The Windows tray is a PowerShell/WinForms NotifyIcon consuming `relay health --json` (state) plus a periodic `wab status --json` (the persona Show/Hide list) and shelling wonda verbs, zero platform logic in the script. --stop removes only the icon and leaves the relay running
 # macOS Dock menu: right-click a running WAB's Dock tile (the 🐱) for "Show on screen" / "Send to background" (same as wab show/hide). Each running persona has its own Dock tile and its menu controls only that persona. Opt out with WAB_DOCK_MENU=0.
@@ -240,7 +241,7 @@ wonda wab status                              # list personas + last activity + 
 wonda wab login <account> <linkedin|x|reddit|instagram> # RECOMMENDED for a new persona: open headful window, user logs in, session minted in-WAB (independent + fingerprint-coherent)
 wonda wab check <account> <linkedin|x|reddit|instagram> # non-interactive session-alive probe
 wonda wab bind <persona> --x <acct> --reddit <acct> --linkedin <acct>  # multi-account power-user path: bind N accounts to ONE persona
-wonda wab record <url>                        # anonymous one-shot capture (no account, no cookies), see below
+wonda wab record <url>                        # anonymous one-shot webm recording (no account, no cookies), see below
 wonda wab sync-cookies [account]              # force wab → disk cookie sync now (don't wait for the 10-min timer)
 wonda wab logs [account] --tail 100           # tail driver.log (--audit for structured per-command log)
 wonda wab errors --tail 20 --since 24h        # tail the cross-persona action-failure log
@@ -287,7 +288,62 @@ wonda wab browse https://example.com --persona <persona> --scrolls 6
 wonda wab browse --persona <persona>                      # scroll the shared default tab's current page, no navigation
 ```
 
-**Anonymous capture (`record`).** `wonda wab record <url>` records a URL to webm in an ephemeral Chromium (fresh fingerprint each call, no persona, no cookies). Use it for cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check) and marketing demo capture.
+**Anonymous PNG capture (`screenshot`).** `wonda wab screenshot` has a compatibility-preserving persona mode and a new anonymous URL mode.
+
+`wonda wab screenshot [persona]` still captures the persona's already-open tab without surfacing the window. Its existing flags retain their meaning: `--tab` selects the tab, `--full-page` captures the scrollable page, and `--output` writes a file. With `--json` and no output file it still returns `{path, base64, mimeType}` so MCP and existing automation receive the inline PNG unchanged.
+
+An absolute `http://` or `https://` argument selects anonymous mode. It launches a fresh ephemeral Chromium with no persona, cookies, or persistent state:
+
+```bash
+wonda wab screenshot \
+  'http://127.0.0.1:8765/hero-lab.html#close-colorflight' \
+  --output tmp/close-proof.png \
+  --viewport 2048x982 \
+  --scale 1 \
+  --wait-until networkidle \
+  --wait-for '#hero-preview' \
+  --delay 700ms \
+  --animations disabled
+```
+
+Anonymous defaults are `--viewport 1280x720`, `--scale 1`, `--wait-until networkidle`, `--delay 0`, and `--animations allow`. `--wait-until` accepts `load`, `domcontentloaded`, or `networkidle`. Wonda automatically waits for `document.fonts.ready`; `--wait-for <selector>` waits for a visible element, and `--delay <duration>` adds a final settling delay. `--inject-js <file>` runs after navigation in an async IIFE, so top-level `await` works.
+
+For deterministic motion, use `--animations disabled` to finish finite animations and cancel infinite ones at capture, or `--freeze-at 800ms` to seek Web Animations to an exact timeline offset and pause them. The two options conflict. `--selector '.hero-stage'` captures the first matching element. `--clip x,y,width,height` captures an exact document-coordinate rectangle in CSS pixels. The rectangle may extend beyond the viewport but must fit within the rendered page. `--selector`, `--clip`, and `--full-page` are mutually exclusive capture modes.
+
+Pass several absolute URLs to capture all of them. Or pass relative path, query, or quoted hash arguments after one absolute base URL; when any relative target is present, the first URL is only the resolution base and is not captured separately. Add `--viewports` for a viewport matrix. Chromium launches once for the whole batch:
+
+```bash
+wonda wab screenshot http://127.0.0.1:8765/hero-lab.html \
+  '#fast-close' '#close-colorflight' \
+  --viewports 2048x982,1440x1000,390x844 \
+  --output tmp/qa \
+  --output-template '{route}-{viewport}.png'
+```
+
+For a single capture without `--output-template`, `--output` is the PNG path. For a batch, manifest, or any template-driven capture, it is an output directory. `--output-template` supports `{index}`, `{route}`, and `{viewport}`, and expanded paths must be unique. `{route}` is sanitized; overlong expanded path components are shortened with a stable hash suffix. `--viewport` and `--viewports` conflict. Without output flags, one URL writes `screenshot-<timestamp>.png` in the current directory and a batch writes under `screenshots-<timestamp>/`. A template without `--output` is relative to the current directory, or to the manifest directory when it comes from the manifest.
+
+A strict JSON manifest describes the same matrix:
+
+```json
+{
+  "url": "http://127.0.0.1:8765/hero-lab.html",
+  "routes": ["#fast-close", "#close-colorflight"],
+  "viewports": ["2048x982", "1440x1000", "390x844"],
+  "scale": 1,
+  "waitUntil": "networkidle",
+  "waitFor": "#hero-preview",
+  "delay": "700ms",
+  "injectJs": "scripts/visual-state.mjs",
+  "animations": "disabled",
+  "outputTemplate": "{route}-{viewport}.png"
+}
+```
+
+Run it with `wonda wab screenshot --manifest visual-qa.json --output tmp/qa`. Use `urls` instead of `url` for independent absolute targets; `routes` resolves relative to `url`. Manifest keys mirror the anonymous scalar flags in camel case, including `freezeAt`, `selector`, `clip`, and `fullPage`. Explicit CLI flags override manifest values.
+
+Anonymous `--json` returns `{ok, captures: [...]}` without embedding PNG bytes. Every capture reports `url`, `finalUrl`, `viewport`, `dpr`, `pageDimensions`, `consoleErrors`, `failedRequests`, and `fontsLoaded`. A successful capture also reports `path`, which means the PNG was written there. A failed capture omits `path`, carries `error`, and keeps any diagnostics collected before the failure. The browser continues the remaining matrix after an item fails and exits nonzero when any capture failed. Use this output for visual QA diagnostics. Non-JSON output prints only successfully generated PNG paths.
+
+**Anonymous video capture (`record`).** `wonda wab record <url>` records a URL to webm in an ephemeral Chromium (fresh fingerprint each call, no persona, no cookies). Use it for cookie-banner-gated pages (Notion public shares, pdf.js renders, any site where bare Playwright trips a bot check) and marketing demo capture.
 
 ```bash
 wonda wab record https://example.notion.site/page \
@@ -1744,7 +1800,7 @@ Manage cloud-hosted social personas that run behind mobile proxies. Sessions are
 - **Watchable, interactive surfaces (a live cloud browser streamed to a `viewerUrl` you open in the local WAB or any browser):** `wonda twin login`, `wonda twin view`, `wonda twin signup`, and `wonda twin attach`. Use these whenever a human must SEE and DRIVE the cloud browser: sign in, re-authenticate, create a brand-new account, or solve anything a human has to touch. `login`/`view`/`signup` START a fresh run and take the twin's profile lease; `attach` is different — it hooks onto an ALREADY-running run by its `<runId>` (from `wonda twin runs`) and NEVER takes the lease, so an operator can watch (or take control of) ANY live run on demand — an autopilot run, a schedule firing, a `run-now` command — not only a session they just started. A CAPTCHA (or any step-up challenge) can only be solved on one of these watchable surfaces. You cannot type credentials or solve a captcha for the user; hand them the `viewerUrl` and let them finish, then re-check `wonda twin login-status` / `health` / `liveness`.
 - **Headless surfaces (no screen, no viewer, unattended):** `wonda twin run-now`, schedules, `wonda twin login-status`, `wonda twin seed-from-cookies`, and every platform action run with `--engine cloud`. These run invisibly behind the proxy; nobody is watching. If one hits a captcha or a login wall it cannot be solved in place, so the run just FAILS (fetch its `wonda twin artifact <runId>` screenshot to see why), OR — while it is still live — you `wonda twin attach <runId> --control --open` to jump into it and drive it yourself, then let it continue.
 - **To take control of a live run, use `wonda twin attach <runId> --control`.** There is no `wonda twin control` verb; drive-capable control of an arbitrary live run happens through `attach --control` (or, for a view you started, `wonda twin view`). `attach` without `--control` is a read-only watcher.
-- **Watching / screenshotting a streamed viewer (agents): use the WAB — NEVER a bare Playwright or headless-Chromium script.** `login`/`view`/`signup` open the viewer as a tab INSIDE the local WAB; that tab IS the observation surface, so `wonda wab show <persona>` surfaces the window and `wonda wab screenshot <persona>` captures a PNG without surfacing it. For `attach` (which opens in your default browser), capture the printed `viewerUrl` with `wonda wab record <viewerUrl> --output run.webm` then extract a frame. Do NOT open the `viewerUrl` in a SECOND browser to "watch progress" — the login-service streams to a SINGLE viewer, so a rival browser just fights the WAB tab, and raw headless Chromium re-implements a worse, detectable WAB. First confirm the run is actually streaming (`wonda twin liveness <persona>` → `live:true`) before building any observer at all.
+- **Watching / screenshotting a streamed viewer (agents): use the WAB, never a bare Playwright or headless-Chromium script.** `login`/`view`/`signup` open the viewer as a tab INSIDE the local WAB; that tab IS the observation surface, so `wonda wab show <persona>` surfaces the window and `wonda wab screenshot <persona>` captures a PNG without surfacing it. For a read-only `attach` capture, omit both `--control` and `--open`, then run `wonda wab screenshot <viewerUrl> --output run.png --wait-until domcontentloaded --wait-for '#screen[width][height]'`. The attach viewer adds `width` and `height` attributes to `#screen` only after its first streamed image has loaded into the canvas, so this waits for real frame content instead of merely waiting for the viewer shell or idle network. The broker fans frames out to multiple read-only viewers, so this screenshot can run alongside other viewers. Only control is single-winner: if several controller-role viewers connect, the first keeps control and later ones are demoted to view-only. First confirm the run is actually streaming (`wonda twin liveness <persona>` → `live:true`) before building any observer at all.
 
 `wonda twin login-automated` is NOT a headless happy path. The route never finishes a login on its own; it ALWAYS mints a streamed-login fallback and returns `{ status: "needs_human", viewerUrl }`. Treat it as "open this `viewerUrl` and sign in by hand", the same as `twin login`.
 
