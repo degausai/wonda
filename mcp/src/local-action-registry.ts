@@ -1,3 +1,10 @@
+import {
+  buildRecruiterToolArgv,
+  RECRUITER_MIN_CLI_VERSION,
+  RECRUITER_TOOL_DEFINITIONS,
+  validateRecruiterToolPayload,
+} from "./recruiter-action-contract.js";
+
 export type LocalActionKind = "read" | "write";
 export type LocalActionPlatform = "linkedin" | "reddit" | "x" | "instagram";
 export type LocalActionVia = "cookies" | "wab";
@@ -280,6 +287,30 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
 };
 
 const ACTION_DEFINITIONS = [
+  ...RECRUITER_TOOL_DEFINITIONS.map(
+    (definition): LocalActionSpec => ({
+      platform: "linkedin",
+      action: `recruiter-${definition.verb}`,
+      kind: definition.kind,
+      requestedSlots: definition.kind === "write" ? { other_write: 1 } : {},
+      variableSlots: false,
+      toolName: `linkedin_recruiter_${definition.verb.replaceAll("-", "_")}`,
+      supportedVia: ["cookies", "wab"],
+      via: definition.via,
+      viaOverride: true,
+      payloadFields: definition.fields,
+      supportsPagination: false,
+      strictPayload: true,
+      timeoutMs: 310_000,
+      preservePartialStdout: true,
+      minCliVersion: RECRUITER_MIN_CLI_VERSION,
+      validatePayload: (payload) => {
+        validateRecruiterToolPayload(definition, payload);
+      },
+      buildArgv: (payload, persona, account) =>
+        buildRecruiterToolArgv(definition, payload, persona, account),
+    }),
+  ),
   read("linkedin", "me", []),
   read("linkedin", "search", ["query"]),
   read("linkedin", "profile", ["target"]),
