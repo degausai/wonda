@@ -236,6 +236,7 @@ wonda wab hide [account]                       # send a surfaced WAB back offscr
 wonda wab screenshot [persona]                 # persona mode: capture an already-open tab without surfacing it; --json still returns inline base64, --output writes a file, --tab/--full-page optional
 wonda wab screenshot <url> --output page.png   # anonymous PNG in a fresh ephemeral browser; responsive waits, injection, animation, element, clip, batch, manifest, and diagnostic JSON controls, see below
 wonda wab browse [url] --persona <persona>     # load a page and scroll it like a person: pause, scroll, pause, scroll; stops early once the scrolled element stops advancing, see below (plain text output, not JSON)
+wonda wab snapshot -i --persona <persona>      # drive ANY page: interactive elements with refs ([ref=e5]); then click/type/scroll/... @e5, see "Drive any page" below
 wonda wab menubar                              # Tray control, macOS menu bar or Windows notification area: the Wonda cat icon with a corner status badge. Green filled = running here and serving; orange half = standing by, which proves only that this machine is not the active device (whether another device or no device is serving is a separate three-way the badge cannot answer, and the menu's detail line only echoes the last relay-health check, a snapshot that can lag while this machine stays in standby); red triangle = running but cannot serve; grey hollow = not running here. The badge carries shape as well as color (filled/half/triangle/hollow) on both platforms; macOS falls back to a 🐱 text item with the same states as glyphs. Click for Restart Relay, a state-following Stop/Start toggle (`wonda relay disable`/`enable`, never `relay stop`), Open Log (macOS only; the Windows task runs the relay with no log file), and Show/Hide per running WAB; the tooltip carries the full status sentence. The bottom item "Quit Wonda" runs `wonda app quit` (stop relay + disable autostart + remove every open-at-login mechanism (macOS login item, Windows Startup entry) + remove the icon; quit stays quit until the app or `wonda app open` runs again). The Windows tray is a PowerShell/WinForms NotifyIcon consuming `relay health --json` (state) plus a periodic `wab status --json` (the persona Show/Hide list) and shelling wonda verbs, zero platform logic in the script. --stop removes only the icon and leaves the relay running
 # macOS Dock menu: right-click a running WAB's Dock tile (the 🐱) for "Show on screen" / "Send to background" (same as wab show/hide). Each running persona has its own Dock tile and its menu controls only that persona. Opt out with WAB_DOCK_MENU=0.
 # macOS: a background WAB no longer steals focus or flashes the menu bar / Dock when it opens a new tab; the Dock tile stays, it just never comes to the foreground until you `wab show` it.
@@ -277,6 +278,50 @@ wonda wab config get <persona>                # print a persona's persisted conf
 
 Lifecycle commands take an `--account` (e.g. `wonda wab login <account> linkedin`); the persona is auto-derived from the account name. `wonda wab bind` is the one place a persona is named explicitly: use it when one Chromium must host accounts that have different names per platform.
 
+**Drive any page (`snapshot`, act on `@ref`, `snapshot`).** Click, type, scroll, and read ANY site in the persona's logged-in WAB, offscreen, without an action script. Use it for every site or step the platform commands do not cover; never drive the WAB with computer-use or screen clicks. The loop:
+
+1. `wonda wab goto <url> --persona <p>` (or start from whatever the tab already shows).
+2. `wonda wab snapshot -i --persona <p>` prints the actionable elements as YAML, one per line, each with a ref:
+   ```
+   # url: https://news.ycombinator.com/
+   # title: Hacker News
+   - link "new" [ref=e7]:
+     - /url: newest
+   - textbox "Search" [ref=e41]
+   ```
+3. Act on a ref: `wonda wab click @e7`, `wonda wab type @e41 "rust" --submit`.
+4. Snapshot again. Refs expire on every snapshot and navigation of the tab; a stale ref fails fast with `ref_not_found` and a hint to re-snapshot. Add `--snapshot` to any page-changing action (click, type, fill, press, hover, select, scroll, goto, back, forward, reload, upload) to print the fresh interactive snapshot in the same call.
+
+Target grammar (one argument; quote it when it has spaces): `@e5` / `e5` / `ref=e5` (snapshot ref; `@f1e3` inside a frame), `label=Email`, `placeholder=Search`, `640,360` (viewport x,y, `click` and `hover` only), anything else is a Playwright selector (`'text=Sign in'`, `'role=button[name="Post"]'`, CSS, `xpath=//a`). Prefer refs.
+
+```bash
+wonda wab snapshot [-i] [--max-chars N]                  # YAML accessibility tree; -i = actionable elements only (default cut 40000 chars)
+wonda wab click <target> [--button left|right|middle] [--double]   # human mouse path; scrolls off-screen elements into view first
+wonda wab type <target> <text> [--clear] [--submit]      # clicks the field, human keystrokes; --submit presses Enter after
+wonda wab fill <target> <text>                           # instant value set, replaces content ("" clears)
+wonda wab press <key> [--target <target>]                # Enter, Tab, Escape, ArrowDown, PageDown, ControlOrMeta+A (lowercase ok)
+wonda wab hover <target>                                 # open hover menus / tooltips
+wonda wab select <target> <value> [value...]             # native <select>, by option value or label
+wonda wab scroll [up|down|left|right] [pixels]           # mouse wheel, default down 600; prints scrollY/scrollHeight/atBottom
+wonda wab scroll --to top|bottom                         # or --into <target> to bring an element into view
+wonda wab wait <target> [--state visible|hidden|attached|detached] [--timeout 10s]
+wonda wab wait --url <substring|glob> | --load load|domcontentloaded|networkidle | --time 2s   # exactly one condition; --timeout max 60s
+wonda wab get text|html|value|attr|url|title|box [target] [--attr NAME] [--max-chars N]   # text/html with no target = whole page; box prints {x,y,width,height}
+wonda wab eval <js> | --file <path> | - [--main-world]   # prints the JSON result; function expressions are called, promises awaited
+wonda wab goto <url> [--wait-until load|domcontentloaded|networkidle]   # offscreen navigation; http(s) only; bare host gets https://
+wonda wab back | forward | reload                         # reload also takes --wait-until
+wonda wab upload <target> <file> [file...] [--via-chooser]   # file input without a native picker; --via-chooser clicks a button that opens one
+wonda wab tabs [list] | tabs open <tab> [url] | tabs close <tab>
+wonda wab screenshot --persona <p> [--target <target>] [--output shot.png]   # look at the page, or crop to one element
+```
+
+Every page command takes `--persona` (default: configured default account; a persona that does not exist on this machine is an error, never a fresh blank profile) and `--tab` (default `default`, the shared tab `wonda wab start --open` and MCP `wab_open` show; any other name is created on first use, so `--tab research` keeps side work off the page the user watches). Output is one short plain-text line per action even when piped (`clicked @e5 (url: ...)`); `snapshot` prints YAML, `get` prints the raw value, `eval` prints JSON. `--json` prints the driver response as one JSON line (e.g. `{"ok":"click","url":...}`), plus a `snapshot` field with `--snapshot`. Errors go to stderr with exit 1 and usually a `Hint:` line naming the next step. Text starting with `-` goes after `--`: `wonda wab type @e4 -- "-5 degrees"`.
+
+- **`type` vs `fill`:** `type` types keystroke by keystroke with human timing, so use it wherever the site watches input (search with autocomplete, post and chat composers, login forms). `fill` sets the value instantly; use it for long text in plain form fields. Neither submits: add `--submit` to `type`, or `wonda wab press Enter`.
+- **`eval`** runs in an isolated world by default (sees the DOM, not the page's JS globals, invisible to the site); `--main-world` reads page globals but is detectable. The result must be JSON. Prefer `snapshot`/`get` for reading.
+- **`goto`** injects the stored LinkedIn/X/Reddit/Instagram session into a cold profile first and warns on stderr (without failing) on `session_revoked`, `rate_limited`, or `stale_cookies`; a captcha or a page that never loads exits 1. Page-changing commands that land on those platforms flush the refreshed cookies to disk like every other WAB action.
+- **Platform writes** (posts, DMs, connects) still go through the platform commands, which carry recipient guards, rate limits, and audit logs. Use page commands for everything around them.
+
 **Scroll a page like a person (`browse`).** `wonda wab browse [url] --persona <persona>` loads a page in the persona's WAB and scrolls it: a pause to look at the page, then scroll, pause, scroll, for `--scrolls` times (default `5`). `--scrolls` accepts `1`-`200`; a value outside that range is a hard error, not clamped, and it is rejected before a browser is launched. `--first-wait` (default `10s`) is the pause before the first scroll; `--wait` (default `5s`) is the pause between scrolls; both are jittered +/-30% because a precisely repeated interval is itself a fingerprint, and both are floored at 250ms so a very small value is not jittered down to zero — `--first-wait 0 --wait 0` still pauses ~250ms per wait, not 0, so with `--scrolls 200` that floor alone adds up to roughly 50s. It only scrolls — no clicking, no engagement — so it works on any site.
 
 Progress is measured on the element that was actually scrolled: the viewport-filling overflow container when the site has one (LinkedIn's feed lives in `<main id="workspace">`, where `window.scrollY` never moves at all), otherwise the document scroller. Scrolling stops early once that element stops advancing across 2 consecutive scrolls, reported as `(reached bottom)` in the printed summary, so a short page does not grind against the bottom. An infinite feed keeps going for the full `--scrolls`.
@@ -292,7 +337,7 @@ wonda wab browse --persona <persona>                      # scroll the shared de
 
 **Anonymous PNG capture (`screenshot`).** `wonda wab screenshot` has a compatibility-preserving persona mode and a new anonymous URL mode.
 
-`wonda wab screenshot [persona]` still captures the persona's already-open tab without surfacing the window. Its existing flags retain their meaning: `--tab` selects the tab, `--full-page` captures the scrollable page, and `--output` writes a file. With `--json` and no output file it still returns `{path, base64, mimeType}` so MCP and existing automation receive the inline PNG unchanged.
+`wonda wab screenshot [persona]` still captures the persona's already-open tab without surfacing the window. Its existing flags retain their meaning: `--tab` selects the tab, `--full-page` captures the scrollable page, and `--output` writes a file. With `--json` and no output file it still returns `{path, base64, mimeType}` so MCP and existing automation receive the inline PNG unchanged. `--persona <name>` works in place of the positional (the same flag every page command takes), and `--target <target>` crops to one element using the page-command target grammar (`@e12` from `wab snapshot`, `label=...`, or a selector); `--target` conflicts with `--full-page`.
 
 An absolute `http://` or `https://` argument selects anonymous mode. It launches a fresh ephemeral Chromium with no persona, cookies, or persistent state:
 

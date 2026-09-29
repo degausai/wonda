@@ -88,6 +88,7 @@ Things worth knowing when an agent drives it:
 
 - **One persona = one browser profile** under `~/.wonda/wab/personas/<name>/`. Different personas have different cookies, profile, and fingerprint. In the common case one persona per account is auto-created on first use and named after the account.
 - **It runs offscreen by default.** The window is real (no headless fingerprint) but rendered off-viewport and hidden from the macOS Dock. There is no application named "WAB": when surfaced, the window is titled **"Wonda · \<persona\>"**. The `wab_show` MCP tool (or `wonda wab show <persona>`) brings it on screen; `wab_hide` sends it back; `wab_open` navigates it to a platform or URL. `wab_status` lists persona browsers with PID and socket path. Agents never need a computer-use tool for any of this.
+- **Any site, snapshot then act.** `wab_snapshot` returns the page's accessibility tree with element refs (`[ref=e5]`); `wab_click`, `wab_type`, `wab_press`, `wab_select`, `wab_hover` and `wab_scroll` take `@e5` (or `label=Email`, `placeholder=Search`, a Playwright selector). Refs go stale after navigation or the next snapshot, so re-snapshot once the page changes; `snapshot: true` on an action returns the fresh one in the same call. `wab_navigate`, `wab_wait` and `wab_get` load, wait and read, all offscreen. Every tool takes an optional `tab` (default: the shared tab `wab_open` navigates). `wab_eval` (page JavaScript) is local mode only: the remote connector never exposes it, since page JS can read session tokens.
 - **One-time install**: `wonda wab install` downloads the stealth browser and Chromium (~300 MB). The first write action triggers it automatically if missing.
 
 ## Transports: `wab` vs `cookies`
@@ -210,11 +211,16 @@ The whole surface is behind a per-account feature flag. Until it is enabled the 
 | `wonda_whoami`                                                           | Acting Wonda account, engine policy, active device |
 | `list_content_skills`                                                    | Discover effective account-specific workflows      |
 | `get_content_skill`                                                      | Fetch one full, current workflow by slug           |
-| `wab_status` (local mode only)                                           | Running WAB personas with PID and socket path      |
-| `wab_show` / `wab_hide` (local mode only)                                | Surface the WAB window on screen / send it back    |
-| `wab_open` (local mode only)                                             | Navigate the WAB to a platform or URL              |
-| `wab_login_open` / `wab_login_check` (local mode only)                   | Open a platform login in the WAB / verify it       |
-| `wab_screenshot` (local mode only)                                       | Capture the WAB's current page as a PNG            |
+| `wab_status`                                                             | Running WAB personas with PID and socket path      |
+| `wab_show` / `wab_hide`                                                  | Surface the WAB window on screen / send it back    |
+| `wab_open`                                                               | Navigate the WAB to a platform or URL              |
+| `wab_login_open` / `wab_login_check`                                     | Open a platform login in the WAB / verify it       |
+| `wab_screenshot`                                                         | Capture the WAB's current page as a PNG            |
+| `wab_snapshot`                                                           | Page accessibility tree with element refs          |
+| `wab_click` / `wab_type` / `wab_press`                                   | Act on an element by ref or selector               |
+| `wab_select` / `wab_hover` / `wab_scroll`                                | Choose options, hover, scroll                      |
+| `wab_navigate` / `wab_wait` / `wab_get`                                  | Load, wait for, and read the page offscreen        |
+| `wab_eval` (local mode only)                                             | Run page JavaScript                                |
 
 Media editing (trim, captions, overlays, ...) is a `wonda edit ...` CLI task, not an MCP tool.
 

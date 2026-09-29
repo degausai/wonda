@@ -106,44 +106,12 @@ export async function runLocalVerb(
         ? spec.minCliVersion
         : spec.minCliVersionBase;
   if (requiredCliVersion !== undefined) {
-    const capture = options.captureVersion ?? captureBinaryVersion;
-    let binaryVersion = await capture();
-    if (
-      binaryVersion !== undefined &&
-      compareVersions(binaryVersion, requiredCliVersion) < 0
-    ) {
-      // The version is cached for the process lifetime, so a user who just
-      // upgraded the binary would stay blocked until an MCP restart; re-probe
-      // once before refusing so retry-after-upgrade actually recovers.
-      binaryVersion = await (options.captureVersion === undefined
-        ? refreshBinaryVersion()
-        : options.captureVersion());
-    }
-    if (
-      binaryVersion !== undefined &&
-      compareVersions(binaryVersion, requiredCliVersion) < 0
-    ) {
-      // Per-channel instruction rather than the generic "update the CLI": this
-      // refusal returns before runWonda, so the staleness notice that normally
-      // carries the instruction never runs. It matters most on mcpb, where the
-      // binary is embedded in the extension and `brew upgrade` cannot fix it.
-      //
-      // The refusal is a LOCAL verdict and must not wait on the network. mcpb
-      // needs no policy at all, and every other channel gets one bounded
-      // attempt: a stalled fetch would otherwise turn an instant 409 into a
-      // tool timeout, losing the very guidance this is here to deliver.
-      const channel = detectInstallChannel();
-      const policy =
-        channel === "mcpb"
-          ? undefined
-          : await withPolicyDeadline(getCliVersionPolicy());
-      const instruction = buildUpdateInstruction(channel, policy);
-      return {
-        ok: false,
-        error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${args.platform}/${args.action}; it needs ${formatVersion(requiredCliVersion)} or newer. ${instruction ?? "Update the wonda CLI to use this tool."}`,
-        status: 409,
-      };
-    }
+    const refusal = await refuseBelowCliVersion(
+      requiredCliVersion,
+      `${args.platform}/${args.action}`,
+      options.captureVersion,
+    );
+    if (refusal !== undefined) return refusal;
   }
 
   let argv: string[];
@@ -166,6 +134,60 @@ export async function runLocalVerb(
     preservePartialStdout: spec.preservePartialStdout,
     ...options,
   });
+}
+
+/**
+ * The 409 upgrade refusal for a verb newer than the installed binary, or
+ * undefined when the binary is new enough (or its version is unknown/dev,
+ * which never blocks).
+ */
+async function refuseBelowCliVersion(
+  requiredCliVersion: string,
+  subject: string,
+  captureVersion: (() => Promise<string | undefined>) | undefined,
+): Promise<ApiResult<never> | undefined> {
+  const capture = captureVersion ?? captureBinaryVersion;
+  let binaryVersion = await capture();
+  if (
+    binaryVersion !== undefined &&
+    compareVersions(binaryVersion, requiredCliVersion) < 0
+  ) {
+    // The version is cached for the process lifetime, so a user who just
+    // upgraded the binary would stay blocked until an MCP restart; re-probe
+    // once before refusing so retry-after-upgrade actually recovers.
+    binaryVersion = await (captureVersion === undefined
+      ? refreshBinaryVersion()
+      : captureVersion());
+  }
+  if (
+    binaryVersion === undefined ||
+    compareVersions(binaryVersion, requiredCliVersion) >= 0
+  ) {
+    return undefined;
+  }
+  // Per-channel instruction rather than the generic "update the CLI": this
+  // refusal returns before runWonda, so the staleness notice that normally
+  // carries the instruction never runs. It matters most on mcpb, where the
+  // binary is embedded in the extension and `brew upgrade` cannot fix it.
+  const instruction = await resolveUpdateInstruction();
+  return {
+    ok: false,
+    error: `Wonda binary ${formatVersion(binaryVersion)} does not support ${subject}; it needs ${formatVersion(requiredCliVersion)} or newer. ${instruction ?? "Update the wonda CLI to use this tool."}`,
+    status: 409,
+  };
+}
+
+// The refusal is a LOCAL verdict and must not wait on the network. mcpb needs
+// no policy at all, and every other channel gets one bounded attempt: a stalled
+// fetch would otherwise turn an instant 409 into a tool timeout, losing the
+// very guidance it is here to deliver.
+async function resolveUpdateInstruction(): Promise<string | undefined> {
+  const channel = detectInstallChannel();
+  const policy =
+    channel === "mcpb"
+      ? undefined
+      : await withPolicyDeadline(getCliVersionPolicy());
+  return buildUpdateInstruction(channel, policy);
 }
 
 // Upper bound on how long a version refusal may wait for the update policy.
@@ -333,6 +355,370 @@ export async function runWabVisibility(
       windowTitle: `Wonda · ${resolved}`,
     },
   };
+}
+
+// ── WAB page interaction: snapshot -> act(@ref) -> re-snapshot ──────────────
+
+// The wonda release that first ships `wab snapshot/click/type/fill/press/...`.
+// MUST equal that release: the latest existing tag is wonda/v1.62.0, so the
+// commands land in 1.63.0. An older binary gets the 409 upgrade guidance instead
+// of an "unknown command" exec failure. Mirrored server-side by
+// WAB_INTERACT_MIN_RELAY_VERSION (apps/api-service .../routes/wab-control.ts).
+export const WAB_INTERACT_MIN_CLI_VERSION = "1.63.0";
+
+// Input bounds, shared by the MCP schemas and mirrored by the api-service route
+// schema (routes/wab-control.ts) so both transports accept the same inputs.
+export const WAB_INTERACT_LIMITS = {
+  target: 2048,
+  // Human typing runs ~40-120ms per character; past this, fill is the only
+  // sane path (and the remote route must finish inside its request budget).
+  typeText: 3000,
+  fillText: 50_000,
+  key: 64,
+  value: 1024,
+  values: 64,
+  url: 2048,
+  attr: 256,
+  maxChars: 200_000,
+  // Mirrors the CLI's wabMaxScrollPixels.
+  pixels: 50_000,
+  waitMs: 60_000,
+} as const;
+
+// Mirrors the CLI's wabTabPattern (cmd/automation/wab_interact.go).
+export const WAB_TAB_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+
+export type WabInteractCommand =
+  | "snapshot"
+  | "click"
+  | "type"
+  | "fill"
+  | "press"
+  | "hover"
+  | "select"
+  | "scroll"
+  | "wait"
+  | "get"
+  | "goto"
+  | "back"
+  | "forward"
+  | "reload"
+  | "eval";
+
+export type WabInteractParams = {
+  tab?: string;
+  target?: string;
+  text?: string;
+  key?: string;
+  button?: "left" | "right" | "middle";
+  double?: boolean;
+  clear?: boolean;
+  submit?: boolean;
+  values?: string[];
+  direction?: "up" | "down" | "left" | "right";
+  pixels?: number;
+  to?: "top" | "bottom";
+  into?: string;
+  state?: "visible" | "hidden" | "attached" | "detached";
+  url?: string;
+  load?: "load" | "domcontentloaded" | "networkidle";
+  ms?: number;
+  timeoutMs?: number;
+  what?: "text" | "html" | "value" | "attr" | "url" | "title" | "box";
+  attr?: string;
+  maxChars?: number;
+  interactive?: boolean;
+  snapshot?: boolean;
+  js?: string;
+  mainWorld?: boolean;
+};
+
+// Commands that change the page and accept `--snapshot` (act-and-observe in
+// one call: the CLI appends the interactive snapshot after acting).
+const WAB_SNAPSHOT_AFTER_COMMANDS: ReadonlySet<WabInteractCommand> = new Set([
+  "click",
+  "type",
+  "fill",
+  "press",
+  "select",
+  "scroll",
+  "goto",
+  "back",
+  "forward",
+  "reload",
+]);
+
+// The CLI waits the driver's 60s action budget + 15s slack per request, after
+// a possible cold start (EnsureRunning spawns the persona offscreen). --snapshot
+// adds a second driver request with the same bound.
+const WAB_INTERACT_TIMEOUT_MS = 150_000;
+const WAB_NAVIGATE_TIMEOUT_MS = 180_000;
+const WAB_SNAPSHOT_AFTER_TIMEOUT_MS = 75_000;
+// Upper bound of the driver's human keystroke delay (40-120ms) plus slack.
+const WAB_TYPE_MS_PER_CHAR = 150;
+const WAB_WAIT_DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Builds the exact `wonda wab <command>` argv (Layer 2 contract):
+ * `--json wab <command> --persona <p> [--tab <t>] [flags...] [-- positionals...]`.
+ * Positionals always follow `--` so page text or a key starting with "-" is
+ * never parsed as a flag. Throws on an invalid parameter combination.
+ * Mirrored by buildWabArgv in apps/api-service/src/public-api/routes/wab-control.ts.
+ */
+export function buildWabInteractArgv(
+  command: WabInteractCommand,
+  persona: string,
+  params: WabInteractParams,
+): { argv: string[]; timeoutMs: number } {
+  const flags = ["--persona", persona];
+  if (params.tab !== undefined) {
+    if (!WAB_TAB_PATTERN.test(params.tab)) {
+      throw new Error(
+        "tab must be 1-64 letters, digits or _ . : - (starting with a letter or digit)",
+      );
+    }
+    flags.push("--tab", params.tab);
+  }
+  const positionals: string[] = [];
+
+  switch (command) {
+    case "snapshot":
+      if (params.interactive === true) flags.push("--interactive");
+      if (params.maxChars !== undefined) {
+        flags.push("--max-chars", String(params.maxChars));
+      }
+      break;
+    case "click":
+      positionals.push(requireParam(params.target, "target", command));
+      if (params.button !== undefined) flags.push("--button", params.button);
+      if (params.double === true) flags.push("--double");
+      break;
+    case "type": {
+      const text = requireText(params.text, command);
+      if (text.length > WAB_INTERACT_LIMITS.typeText) {
+        throw new Error(
+          `text over ${WAB_INTERACT_LIMITS.typeText} characters is too long to type like a person; use fill (wab_type with instant: true)`,
+        );
+      }
+      if (text === "" && params.clear !== true && params.submit !== true) {
+        throw new Error(
+          "text is empty: pass clear to empty the field, or submit to just press Enter",
+        );
+      }
+      positionals.push(requireParam(params.target, "target", command), text);
+      if (params.clear === true) flags.push("--clear");
+      if (params.submit === true) flags.push("--submit");
+      break;
+    }
+    case "fill":
+      positionals.push(
+        requireParam(params.target, "target", command),
+        requireText(params.text, command),
+      );
+      break;
+    case "press":
+      positionals.push(requireParam(params.key, "key", command));
+      if (params.target !== undefined) flags.push("--target", params.target);
+      break;
+    case "hover":
+      positionals.push(requireParam(params.target, "target", command));
+      break;
+    case "select":
+      if (params.values === undefined || params.values.length === 0) {
+        throw new Error("values is required for select");
+      }
+      positionals.push(
+        requireParam(params.target, "target", command),
+        ...params.values,
+      );
+      break;
+    case "scroll": {
+      const byAmount =
+        params.direction !== undefined || params.pixels !== undefined;
+      const modes = [
+        byAmount,
+        params.to !== undefined,
+        params.into !== undefined,
+      ].filter(Boolean).length;
+      if (modes > 1) {
+        throw new Error(
+          "scroll takes one of direction/pixels, to, or into, not several",
+        );
+      }
+      if (params.to !== undefined) flags.push("--to", params.to);
+      if (params.into !== undefined) flags.push("--into", params.into);
+      if (byAmount) {
+        positionals.push(params.direction ?? "down");
+        if (params.pixels !== undefined)
+          positionals.push(String(params.pixels));
+      }
+      break;
+    }
+    case "wait": {
+      const conditions = [
+        params.target,
+        params.url,
+        params.load,
+        params.ms,
+      ].filter((value) => value !== undefined).length;
+      if (conditions !== 1) {
+        throw new Error("wait takes exactly one of target, url, load, or ms");
+      }
+      if (params.state !== undefined && params.target === undefined) {
+        throw new Error("state only applies when waiting for a target");
+      }
+      if (params.ms !== undefined && params.timeoutMs !== undefined) {
+        throw new Error("timeoutMs does not apply to a plain ms wait");
+      }
+      if (params.target !== undefined) positionals.push(params.target);
+      if (params.state !== undefined) flags.push("--state", params.state);
+      if (params.url !== undefined) flags.push("--url", params.url);
+      if (params.load !== undefined) flags.push("--load", params.load);
+      if (params.ms !== undefined) flags.push("--time", `${params.ms}ms`);
+      if (params.timeoutMs !== undefined) {
+        flags.push("--timeout", `${params.timeoutMs}ms`);
+      }
+      break;
+    }
+    case "get": {
+      const what = requireParam(params.what, "what", command);
+      if ((what === "attr") !== (params.attr !== undefined)) {
+        throw new Error("attr is required for what=attr and only valid there");
+      }
+      positionals.push(what);
+      if (params.target !== undefined) positionals.push(params.target);
+      if (params.attr !== undefined) flags.push("--attr", params.attr);
+      if (params.maxChars !== undefined) {
+        flags.push("--max-chars", String(params.maxChars));
+      }
+      break;
+    }
+    case "goto": {
+      const url = requireParam(params.url, "url", command);
+      if (!/^https?:\/\//i.test(url)) {
+        throw new Error("url must be an http(s) URL");
+      }
+      positionals.push(url);
+      break;
+    }
+    case "back":
+    case "forward":
+    case "reload":
+      break;
+    case "eval":
+      positionals.push(requireParam(params.js, "js", command));
+      if (params.mainWorld === true) flags.push("--main-world");
+      break;
+  }
+
+  if (params.snapshot === true && WAB_SNAPSHOT_AFTER_COMMANDS.has(command)) {
+    flags.push("--snapshot");
+  }
+  return {
+    argv: [
+      "--json",
+      "wab",
+      command,
+      ...flags,
+      ...(positionals.length > 0 ? ["--", ...positionals] : []),
+    ],
+    timeoutMs:
+      wabInteractTimeoutMs(command, params) +
+      (params.snapshot === true && WAB_SNAPSHOT_AFTER_COMMANDS.has(command)
+        ? WAB_SNAPSHOT_AFTER_TIMEOUT_MS
+        : 0),
+  };
+}
+
+function wabInteractTimeoutMs(
+  command: WabInteractCommand,
+  params: WabInteractParams,
+): number {
+  switch (command) {
+    case "type":
+      return (
+        WAB_INTERACT_TIMEOUT_MS +
+        (params.text?.length ?? 0) * WAB_TYPE_MS_PER_CHAR
+      );
+    case "wait":
+      return (
+        WAB_INTERACT_TIMEOUT_MS +
+        (params.ms ?? params.timeoutMs ?? WAB_WAIT_DEFAULT_TIMEOUT_MS)
+      );
+    case "goto":
+    case "back":
+    case "forward":
+    case "reload":
+      return WAB_NAVIGATE_TIMEOUT_MS;
+    default:
+      return WAB_INTERACT_TIMEOUT_MS;
+  }
+}
+
+function requireParam<T extends string>(
+  value: T | undefined,
+  name: string,
+  command: string,
+): T {
+  if (value === undefined || value === "") {
+    throw new Error(`${name} is required for ${command}`);
+  }
+  return value;
+}
+
+// Text may be empty (fill "" clears a field), but must be present.
+function requireText(value: string | undefined, command: string): string {
+  if (value === undefined) throw new Error(`text is required for ${command}`);
+  return value;
+}
+
+const UNKNOWN_WAB_COMMAND_PATTERN = /unknown command "[^"]+" for "wonda wab"/;
+
+// Runs one page-interaction command against the persona's WAB, offscreen. The
+// CLI's --json output (the driver response) is the result.
+export async function runWabInteract(
+  command: WabInteractCommand,
+  persona: string | undefined,
+  account: string | undefined,
+  params: WabInteractParams,
+  options: RunLocalVerbOptions = {},
+): Promise<ApiResult<unknown>> {
+  let built: { argv: string[]; timeoutMs: number };
+  try {
+    built = buildWabInteractArgv(
+      command,
+      await resolvePersona(persona, account),
+      params,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Invalid wab parameters",
+      status: 400,
+    };
+  }
+  const refusal = await refuseBelowCliVersion(
+    WAB_INTERACT_MIN_CLI_VERSION,
+    `wab ${command}`,
+    options.captureVersion,
+  );
+  if (refusal !== undefined) return refusal;
+
+  const result = await runWonda(built.argv, {
+    timeoutMs: built.timeoutMs,
+    ...options,
+  });
+  // A dev/unknown-version binary skips the version gate; an old one still
+  // fails as an unknown command. Turn that into upgrade guidance.
+  if (!result.ok && UNKNOWN_WAB_COMMAND_PATTERN.test(result.error)) {
+    const instruction = await resolveUpdateInstruction();
+    return {
+      ok: false,
+      error: `The installed wonda binary does not support \`wab ${command}\` yet (it needs ${formatVersion(WAB_INTERACT_MIN_CLI_VERSION)} or newer). ${instruction ?? "Ask the user to update wonda, then retry."}`,
+      status: 409,
+    };
+  }
+  return result;
 }
 
 export async function buildLocalActionArgv(
