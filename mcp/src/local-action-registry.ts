@@ -266,7 +266,7 @@ const FIELD_OVERRIDES: Record<string, PayloadFieldSpec[]> = {
       kind: "stringArray",
       maxCount: 1,
       description:
-        "One local media reference for a subreddit media post. Requires WAB and cannot be combined with text or url.",
+        "One local media reference for a subreddit media post. Requires WAB, accepts an optional text body, and cannot be combined with url.",
     },
   ],
   "reddit/vote": [
@@ -1133,6 +1133,11 @@ function redditSubmit(): LocalActionSpec {
   });
   return {
     ...base,
+    minCliVersion: "1.65.0",
+    minCliVersionWhen: (payload) =>
+      checkIsNonEmptyString(payload.text) &&
+      Array.isArray(payload.mediaRefs) &&
+      payload.mediaRefs.length > 0,
     buildArgv(payload, persona, account) {
       const parsed = requirePayloadObject(payload);
       requiredStringField(parsed, "title");
@@ -1171,10 +1176,8 @@ function validateRedditSubmitPayload(
   if (hasText && hasUrl) {
     throw new Error("reddit/submit text and url are mutually exclusive");
   }
-  if (hasMedia && (hasText || hasUrl)) {
-    throw new Error(
-      "reddit/submit mediaRefs are mutually exclusive with text and url",
-    );
+  if (hasMedia && hasUrl) {
+    throw new Error("reddit/submit mediaRefs are mutually exclusive with url");
   }
   if (isProfile && hasMedia) {
     throw new Error("reddit/submit profile posts do not support mediaRefs");
