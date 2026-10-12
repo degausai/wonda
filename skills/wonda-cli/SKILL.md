@@ -1729,9 +1729,9 @@ A first-class platform with three transports selected by `--via`, the same legit
 
 - `--via api` — official Graph API via your connected OAuth account (`--connection`). ToS-safe, used for publishing.
 - `--via cookies` — private mobile API via the local cookie `--account`. Used for reads (saved posts, comments).
-- `--via wab` — browser DOM via the account's Wonda Automation Browser persona. Used for the `comment` write (drives the reel's inline comment composer with a real-browser fingerprint, the same stealth path X reply / LinkedIn comment use).
+- `--via wab` — browser DOM via the account's Wonda Automation Browser persona. Used for native profile/post/discovery reads and the `comment` write.
 
-Transports are per-operation capabilities: `saved` and `comments` are cookies-only (no Graph endpoint for them), `post`/`carousel` are api-only, and `comment` is wab-only. The two identities are distinct: `--account`/`--sessionid` = the local cookie identity; `--connection` = the OAuth `instagram_account` UUID. For `--via wab` the persona is auto-derived from `--account` (or pass `--persona` directly); the WAB injects the bound account's `sessionid` (+ `ds_user_id`) into the Chromium cookie jar at spawn.
+Transports are per-operation capabilities: `saved` and `comments` are cookies-only (no Graph endpoint for them), `post --media`/`carousel` publish through the API, while `post <URL-or-code>`, `user`, `user-posts`, `search`, `home`, `following`, and `comment` use WAB. The two identities are distinct: `--account`/`--sessionid` = the local cookie identity; `--connection` = the OAuth `instagram_account` UUID. For `--via wab` the persona is auto-derived from `--account` (or pass `--persona` directly); the WAB injects the bound account's `sessionid` (+ `ds_user_id`) into the Chromium cookie jar at spawn.
 
 > ⚠️ **Same anti-fraud caution as the others: don't probe freshly-pasted cookies.** The first request on a new `sessionid` should be the operation you wanted. Instagram flags burst activity from a new IP/process on a freshly-handed session.
 
@@ -1762,6 +1762,41 @@ wonda instagram feed-engage --authors "a,b" --duration 5m --persona my-account  
 ```
 
 `--account` selects the cookie file under `~/.wonda/instagram-cookies/<account>.json`. For `saved`, carousels contribute every child's media URL (videos win over images for the per-item URL); pagination uses the `max_id` cursor (`--cursor`, `--all`, `--max-pages`, `--delay <ms>`). `comments` takes a `/p/<code>/` or `/reel/<code>/` URL (or a bare shortcode), decodes it to the numeric media id locally, then pages the same `max_id` cursor; the result carries each comment's `id`, `text`, `authorHandle`, `authorName`, `createdAt`, `likeCount`, `replyCount` plus the parent media's total `commentCount`. For posting, `wonda instagram post --via api` and `wonda publish instagram` share the same Graph-API path. `comment` (write) takes a `/reel/<code>/` or `/p/<code>/` URL (or bare shortcode) plus the text, and is wab-only: it auto-spawns the persona's WAB if needed, types into the inline composer, submits, and writes a `comment` audit row to `~/.wonda/wab/audit.jsonl` (failures fire `wab_action_failed` telemetry and drop a failure bundle).
+
+### Instagram and TikTok native browser reads
+
+Use an existing, logged-in local burner persona. These reads default to `--via wab`; explicit `--via cookies` or `api` fails because native session state and browser requests supply the current read contracts. `--persona` selects the exact browser profile, or `--account` derives its persona. The commands never log in, follow, like, comment, or send messages. On a login wall, checkpoint, CAPTCHA or rate-limit response they stop with an error and a diagnostic bundle. Complete required login/verification in that same persona before another attempt.
+
+```bash
+wonda instagram user casey.aicreates --persona ig-burner
+wonda instagram user-posts gptars.ai --persona ig-burner --limit 12
+wonda instagram post https://www.instagram.com/reel/ABC123/ --persona ig-burner
+wonda instagram post ABC123 --persona ig-burner --download-dir ./originals
+wonda instagram search "desk robot" --type users --persona ig-burner
+wonda instagram search deskrobot --type hashtags --persona ig-burner
+wonda instagram following gptars.ai --persona ig-burner --limit 20
+wonda instagram home --persona ig-burner --limit 5
+wonda tiktok user gptars --persona tiktok-burner
+wonda tiktok user-videos gptars --persona tiktok-burner --limit 12
+wonda tiktok video https://www.tiktok.com/@gptars/video/7692098404066888973 --persona tiktok-burner --download-dir ./originals
+wonda tiktok search "diy desk robot" --type videos --persona tiktok-burner
+wonda tiktok search "diy desk robot" --sort date --posted month --persona tiktok-burner
+wonda tiktok search "diy desk robot" --type users --persona tiktok-burner
+wonda tiktok following gptars --persona tiktok-burner
+wonda tiktok home --persona tiktok-burner --limit 5
+```
+
+Profiles return `handle`, `name`, `bio`, `followerCount`, `followingCount`, `postCount`, `isPrivate` and a canonical URL. Instagram post lists return `posts`; TikTok lists return `videos`. Items include `id`, `url`, `authorHandle`, `authorName`, exact UTC `postedAt`, `caption`, `mediaType`, `mediaUrls`, `videoUrl`, `thumbnail` and available engagement counts. Instagram includes `taggedUsers` and `mentionedUsers`; TikTok includes mentions and `shareCount`. Missing metrics are `null`, and zero counts remain zero. Native profile ordering can include pinned posts; both platforms expose `isPinned` on items.
+
+Instagram `post` and `user-posts` enrich missing reel view counts from the author's native Reels grid. `viewCount` is the exact integer from `play_count`, `ig_play_count` or `view_count`, never a rounded tile label; `viewCountSource` identifies the Reels field when enriched. This preserves each post's timestamp, caption and original list ordering. Enrichment is bounded by `--max-pages` for lists and three Reels rounds for a single post. Unavailable or older counters beyond that window remain `null`.
+
+TikTok video search accepts `--sort relevance|date|likes` and `--posted all|24h|week|month|3m|6m`. The current native web search does not expose date/sort controls, so these flags filter and order a bounded window of native results **client-side**, with six native rounds by default when either flag is set. `--max-pages` overrides that bound up to 10. Age windows use exact UTC timestamps and 1/7/30/90/180 days. JSON `filtering` reports `appliedBy: "client"`, `scannedCount`, `matchedCount`, cutoff/time, and `windowHasMore`; this is not a global ranking of every matching TikTok video. Increase the bound and start a fresh read to inspect a larger window. Filtered cursors require the same flags and page bound and retain the original cutoff time. User search rejects these video-only flags.
+
+Lists default to 12 items and 3 native page/scroll rounds. `--limit` accepts 1–100 and `--max-pages` accepts 1–10. User lists, following and searches return a `cursor` when more results may exist: reuse it only for the same command, target and search type. It resumes after the last item by replaying the native page, within `--max-pages`; increase that bound if the anchor is further down. A missing anchor is an error. Personalized home/For You feeds have no resumable cursor. All reads use the existing pacing ledger; searches have safe/max daily defaults of 25/50, enforced by `--hard`. Private or hidden following lists remain inaccessible.
+
+`--download-dir` on a single post/video saves the best platform-provided video or each carousel image/video byte-for-byte, without transcoding. JSON `downloads` receipts include absolute path, byte length, content type and SHA-256. Existing destination files are preserved; signed URLs can expire, so refresh the post before retrying a download. The 1 GiB per-file cap prevents unbounded downloads.
+
+These new reads are local CLI commands in this release. They are explicitly excluded from hosted Twin and MCP action registration: they depend on native local profile state, and resumable browser cursors and local file downloads have no hosted action contract. Run the CLI directly. Hashtag search returns matching hashtags; hashtag top/recent post feeds are not exposed because the site's keyword/explore surface does not provide a stable top/recent ordering contract.
 
 ### Reddit
 
