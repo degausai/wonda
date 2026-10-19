@@ -1515,7 +1515,9 @@ wonda x dm passcode status --account <name>          # Show whether a passcode i
 wonda x refresh-ids                                  # Refresh cached GraphQL query IDs from X's JS bundles
 ```
 
-All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`, `--delay <ms>`.
+All paginated commands support: `-n <count>`, `--cursor`, `--all`, `--max-pages`, `--delay <ms>`. Tweet reads continue through empty or duplicate-only pages when X supplies a new cursor, up to the page bound.
+
+`x follow` and `x unfollow` match the target handle’s profile control by its accessible label. Creator profiles use their Unfollow menu; ordinary profiles use the confirmation sheet. Subscribe controls are excluded from both normal and recovery clicks, and success requires the target profile’s follow label to change.
 
 `wonda x user` includes additive `emails` and `links` fields when the member has published explicit contact details in their public bio or X exposes expanded URL entities for that profile. These fields are read-only and equivalent to manually reading the profile. No inferred emails, enrichment data, storage, or DOM scraping is involved.
 
