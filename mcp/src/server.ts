@@ -13,6 +13,7 @@ import { registerSequenceTools } from "./tools/sequence.js";
 import { registerSkillTools } from "./tools/skills.js";
 import { registerStatusTools } from "./tools/status.js";
 import { registerTwinTools } from "./tools/twin.js";
+import { registerUpdateTools } from "./tools/update.js";
 import { registerWabTools } from "./tools/wab.js";
 import { registerWhoamiTools } from "./tools/whoami.js";
 import { checkIsLocalMode, PKG_VERSION } from "./version.js";
@@ -30,6 +31,7 @@ const LOCAL_INSTRUCTIONS = `Wonda connects you to the user's real social account
 - "account" selects the identity; the persona is derived automatically. Omit both to use the configured default account.
 - If a platform session is missing or expired, or the user wants to connect a new account: call wab_login_open (opens the platform's login page in a visible WAB window; the user signs in themselves, 2FA included), wait for the user to say they finished, then wab_login_check to verify, then wab_open with the platform key once to sync cookies. NEVER type, request, or handle credentials yourself, and never retry failed write actions without asking. Cookie paste via \`wonda <platform> auth set ...\` in a terminal remains the fallback.
 - First-time setup: \`wonda wab install\` downloads the stealth browser (~300 MB, one time). The first write triggers it automatically if missing.
+- When the user asks to update Wonda, or a tool result says Wonda is outdated, call wonda_update: it opens Claude's install window for the latest version, and the user clicks Install.
 
 Content skills are server-hosted, account-specific workflows. Before inventing a content or outreach workflow, call list_content_skills, then get_content_skill for the best match. The same catalog is available as wonda://skills and each guide as wonda://skills/{slug}. Skill bodies use CLI spelling; when working through MCP, translate an available command such as \`wonda linkedin search-posts\` to its corresponding tool such as linkedin_search_posts. Map identity and transport flags to top-level MCP arguments: use persona for the remote identity, account for the local account, and via for \`--via\`. Put only action-specific fields in payload, and omit CLI-only output flags such as \`--json\`, \`--jq\`, and \`--out\`. If no corresponding tool exists, say so instead of inventing one.
 
@@ -91,6 +93,7 @@ export function createWondaMcpServer(
   registerWhoamiTools(server);
   registerSkillTools(server);
   registerWabTools(server);
+  if (checkIsLocalMode()) registerUpdateTools(server);
   registerResources(server);
 
   return server;

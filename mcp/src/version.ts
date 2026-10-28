@@ -135,7 +135,7 @@ export function buildUpdateInstruction(
   policy: UpdatePolicy | undefined,
 ): string | undefined {
   if (channel === "mcpb") {
-    return "Update the Wonda extension in Claude settings.";
+    return "Update the Wonda extension: call the wonda_update tool (the user then clicks Install), or open https://wonda.sh/update.";
   }
   // Windows is a download URL like pkg, and must return BEFORE the pkg logic
   // below: that path splices in updateCommands.pkg, which is the macOS
